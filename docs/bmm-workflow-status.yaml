@@ -1,0 +1,152 @@
+---
+# BMAD Workflow Status for Perth
+project_name: Perth
+project_level: 3
+last_updated: 2026-01-05T21:30:00-05:00
+
+# Workflow completion status
+workflows:
+  product_brief: null
+  prd: docs/prd-perth-2026-01-04.md
+  architecture: docs/architecture-perth-2026-01-05.md
+  sprint_planning: docs/sprint-plan-perth-2026-01-05.md
+  implementation: in_progress
+
+# Current phase
+current_phase: 4  # Implementation
+
+# Sprint status
+sprint_status:
+  current_sprint: 5  # Next sprint to plan/execute
+  total_sprints_planned: 6
+  completed_sprints: 4
+
+  sprint_1:
+    status: completed
+    stories: 8/8
+    points: 28/28
+    goal: "Establish intent logging foundation with data model and basic CLI commands"
+
+  sprint_2:
+    status: completed
+    stories: 10/10
+    points: 27/27
+    goal: "Complete manual intent logging with full output formatting and documentation"
+
+  sprint_3:
+    status: completed
+    stories: 6/6
+    points: 28/28
+    goal: "Establish LLM infrastructure with provider abstraction and security"
+
+  sprint_4:
+    status: completed
+    stories: 8/8
+    points: 22/22
+    goal: "Complete automated capture with alternative providers and user consent"
+
+# Velocity metrics
+velocity:
+  sprint_1: 28
+  sprint_2: 27
+  sprint_3: 28
+  sprint_4: 22
+  rolling_average: 26.25
+  total_delivered: 105
+
+# Requirements coverage
+requirements_coverage:
+  must_have: 100%  # All Must Have FRs implemented
+  should_have: 80%  # Most Should Have FRs implemented
+  could_have: 20%  # Only Markdown Export from Could Have
+
+# Epic completion status
+epics:
+  EPIC-001_navigation_primitives: complete  # v1.0
+  EPIC-002_manual_intent_logging: complete   # Sprint 1-2
+  EPIC-003_automated_context_capture: complete  # Sprint 3-4
+  EPIC-004_agent_integration: partial  # STORY-022,023,024 done; STORY-025,026,027 pending
+  EPIC-005_advanced_intelligence: partial  # STORY-028,029,030,031,032 done; STORY-033,034,035 pending
+
+# Remaining backlog
+remaining_backlog:
+  sprint_5:
+    estimated_points: 25
+    stories:
+      - id: STORY-025
+        title: "Bloodbank Event Publisher"
+        points: 5
+        priority: should_have
+        epic: EPIC-004
+      - id: STORY-026
+        title: "Bloodbank Config"
+        points: 2
+        priority: should_have
+        epic: EPIC-004
+      - id: STORY-027
+        title: "History Type Filter"
+        points: 2
+        priority: should_have
+        epic: EPIC-004
+      - id: STORY-033
+        title: "Goal Setting Command"
+        points: 3
+        priority: could_have
+        epic: EPIC-005
+      - id: STORY-034
+        title: "Progress Estimation"
+        points: 5
+        priority: could_have
+        epic: EPIC-005
+      - id: STORY-035
+        title: "Search Command"
+        points: 8
+        priority: could_have
+        epic: EPIC-005
+
+  sprint_6_plus:
+    description: "Phase 4 Advanced Intelligence (Could Have)"
+    stories:
+      - "Semantic search with vector DB"
+      - "Pattern recognition"
+      - "Holocene dashboard integration"
+      - "Advanced goal tracking"
+
+# MVP status
+mvp_status:
+  complete: true
+  description: "All Must Have requirements delivered. Perth v2.0 is feature-complete for MVP."
+  delivered_features:
+    - Manual intent logging (log, history commands)
+    - Intent classification (milestone, checkpoint, exploration)
+    - Artifact tracking
+    - Multiple output formats (text, JSON, markdown, context)
+    - LLM auto-summarization (snapshot command)
+    - Secret filtering
+    - Multiple LLM providers (Anthropic, OpenAI, Ollama)
+    - User consent flow
+    - Circuit breaker for LLM failures
+    - Agent source flag
+    - Session resumption display
+    - Config management (show, set, consent)
+    - Keyspace migration
+
+# Next recommended workflow
+next_workflow: retrospective_or_release
+next_workflow_reason: |
+  MVP complete with 4 sprints delivered (105 points, 24 stories).
+  All Must Have requirements satisfied. Options:
+  1. Release v2.0 MVP and gather user feedback
+  2. Continue to Sprint 5 for Should Have features (Bloodbank integration)
+  3. Run /retrospective to close out Phase 4
+
+# Project metadata
+metadata:
+  foundation_docs:
+    - INTENT_TRACKING_IMPLEMENTATION_PLAN.md
+    - CONVERSATION_SUMMARY_INTENT_TRACKING.md
+    - REBRANDING_PLAN.md
+  v1_baseline: PRD.md
+  repository: /home/delorenj/code/zellij-driver
+  target_name: Perth (formerly zellij-driver)
+  binary_name: znav

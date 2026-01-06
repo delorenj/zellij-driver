@@ -1,0 +1,251 @@
+version: "6.0.0"
+project_name: "Perth"
+project_level: 3
+current_sprint: 4
+sprint_plan_path: "docs/sprint-plan-perth-2026-01-05.md"
+
+sprints:
+  - sprint_number: 1
+    start_date: "2026-01-06"
+    end_date: "2026-01-17"
+    capacity_points: 30
+    committed_points: 28
+    completed_points: 28
+    status: "completed"
+    goal: "Establish intent logging foundation with data model and basic CLI commands"
+    stories:
+      - story_id: "STORY-001"
+        title: "IntentEntry Data Model"
+        points: 3
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-002"
+      - story_id: "STORY-002"
+        title: "Redis Intent History Schema"
+        points: 5
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-002"
+      - story_id: "STORY-003"
+        title: "CLI Log Command"
+        points: 5
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-002"
+      - story_id: "STORY-004"
+        title: "Entry Type Classification Flag"
+        points: 2
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-002"
+      - story_id: "STORY-006"
+        title: "CLI History Command"
+        points: 5
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-002"
+      - story_id: "STORY-007"
+        title: "History Limit Flag"
+        points: 2
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-002"
+      - story_id: "STORY-031"
+        title: "Keyspace Migration Command"
+        points: 5
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-005"
+      - story_id: "STORY-INF-001"
+        title: "CI/CD Pipeline Updates"
+        points: 3
+        status: "completed"
+        priority: "must_have"
+        epic: "Infrastructure"
+
+  - sprint_number: 2
+    start_date: "2026-01-20"
+    end_date: "2026-01-31"
+    capacity_points: 30
+    committed_points: 27
+    completed_points: 27
+    status: "completed"
+    goal: "Complete manual intent logging with full output formatting and documentation"
+    stories:
+      - story_id: "STORY-005"
+        title: "Artifact Tracking Flag"
+        points: 3
+        status: "completed"
+        priority: "should_have"
+        epic: "EPIC-002"
+      - story_id: "STORY-008"
+        title: "JSON Output Format"
+        points: 3
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-002"
+      - story_id: "STORY-009"
+        title: "Human-Readable Output Formatting"
+        points: 5
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-002"
+      - story_id: "STORY-010"
+        title: "Help Documentation for Intent Commands"
+        points: 2
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-002"
+      - story_id: "STORY-032"
+        title: "Version Check on Startup"
+        points: 2
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-005"
+      - story_id: "STORY-029"
+        title: "Config Show Command"
+        points: 2
+        status: "completed"
+        priority: "should_have"
+        epic: "EPIC-005"
+      - story_id: "STORY-030"
+        title: "Config Set Command"
+        points: 3
+        status: "completed"
+        priority: "should_have"
+        epic: "EPIC-005"
+      - story_id: "STORY-INF-002"
+        title: "README Updates"
+        points: 2
+        status: "completed"
+        priority: "must_have"
+        epic: "Infrastructure"
+      - story_id: "STORY-INF-003"
+        title: "Config File Template"
+        points: 2
+        status: "completed"
+        priority: "should_have"
+        epic: "Infrastructure"
+      - story_id: "STORY-028"
+        title: "Markdown Export"
+        points: 3
+        status: "completed"
+        priority: "should_have"
+        epic: "EPIC-005"
+
+  - sprint_number: 3
+    start_date: "2026-02-03"
+    end_date: "2026-02-14"
+    capacity_points: 30
+    committed_points: 28
+    completed_points: 28
+    status: "completed"
+    goal: "Establish LLM infrastructure with provider abstraction and security"
+    stories:
+      - story_id: "STORY-011"
+        title: "LLM Provider Trait"
+        points: 5
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-003"
+      - story_id: "STORY-012"
+        title: "Anthropic Claude Provider"
+        points: 5
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-003"
+      - story_id: "STORY-015"
+        title: "Secret Filter Module"
+        points: 5
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-003"
+      - story_id: "STORY-016"
+        title: "Context Collector"
+        points: 5
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-003"
+      - story_id: "STORY-017"
+        title: "CLI Snapshot Command"
+        points: 5
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-003"
+      - story_id: "STORY-020"
+        title: "Config for LLM Settings"
+        points: 3
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-003"
+
+  - sprint_number: 4
+    start_date: "2026-02-17"
+    end_date: "2026-02-28"
+    capacity_points: 30
+    committed_points: 22
+    completed_points: 22
+    status: "completed"
+    goal: "Complete automated capture with alternative providers and user consent"
+    stories:
+      - story_id: "STORY-013"
+        title: "OpenAI GPT Provider"
+        points: 3
+        status: "completed"
+        priority: "should_have"
+        epic: "EPIC-003"
+      - story_id: "STORY-014"
+        title: "Local Ollama Provider"
+        points: 3
+        status: "completed"
+        priority: "should_have"
+        epic: "EPIC-003"
+      - story_id: "STORY-018"
+        title: "User Consent Flow"
+        points: 3
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-003"
+      - story_id: "STORY-019"
+        title: "Circuit Breaker for LLM"
+        points: 3
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-003"
+      - story_id: "STORY-021"
+        title: "Shell Hook Documentation"
+        points: 2
+        status: "completed"
+        priority: "should_have"
+        epic: "EPIC-003"
+      - story_id: "STORY-022"
+        title: "Agent Source Flag"
+        points: 2
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-004"
+      - story_id: "STORY-023"
+        title: "Context Output Format"
+        points: 3
+        status: "completed"
+        priority: "must_have"
+        epic: "EPIC-003"
+      - story_id: "STORY-024"
+        title: "Session Resumption Display"
+        points: 3
+        status: "completed"
+        priority: "should_have"
+        epic: "EPIC-003"
+
+velocity:
+  sprint_1: 28
+  sprint_2: 27
+  sprint_3: 28
+  sprint_4: 22
+  rolling_average: 26.25
+
+team:
+  size: 1
+  sprint_length_weeks: 2
+  capacity_per_sprint: 30
+  developer_level: "senior"

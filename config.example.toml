@@ -1,0 +1,41 @@
+# Perth Configuration File
+# =========================
+#
+# Copy this file to one of:
+#   - $XDG_CONFIG_HOME/zellij-driver/config.toml
+#   - ~/.config/zellij-driver/config.toml
+#
+# Or use `zdrive config set <key> <value>` to modify settings.
+
+# Redis Connection
+# ----------------
+# URL for connecting to Redis server.
+# Supports redis:// and rediss:// (TLS) protocols.
+#
+# Format: redis://[username:password@]host[:port]/[database]
+#
+# Examples:
+#   redis://localhost:6379/          # Local default
+#   redis://localhost:6379/0         # Specific database
+#   redis://:secret@localhost:6379/  # Password only
+#   redis://user:pass@redis.example.com:6379/1  # Full auth
+#   rediss://secure.redis.io:6380/   # TLS connection
+#
+redis_url = "redis://127.0.0.1:6379/"
+
+# Future Settings (v2.1+)
+# -----------------------
+# The following settings are planned for future releases:
+#
+# [intent]
+# max_history_entries = 100    # Maximum entries per pane history
+# default_entry_type = "checkpoint"  # Default for `pane log` command
+#
+# [llm]
+# provider = "anthropic"       # LLM provider for automated summaries
+# api_key = "sk-..."           # API key (use env var recommended)
+# model = "claude-sonnet"      # Model for summarization
+#
+# [output]
+# color = "auto"               # auto, always, never
+# date_format = "relative"     # relative, iso, local

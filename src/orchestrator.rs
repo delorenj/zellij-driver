@@ -1,9 +1,18 @@
-use crate::state::StateManager;
-use crate::types::{PaneInfoOutput, PaneRecord, PaneStatus};
+use crate::context::ContextCollector;
+use crate::llm::{create_provider, CircuitBreaker, LLMConfig};
+use crate::state::{MigrationResult, StateManager};
+use crate::types::{IntentEntry, IntentSource, IntentType, PaneInfoOutput, PaneRecord, PaneStatus};
 use crate::zellij::ZellijDriver;
 use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
+use std::time::Duration;
+use tokio::time::timeout;
+
+/// Global circuit breaker for LLM API calls.
+/// Prevents cascading failures by tracking consecutive errors.
+static LLM_CIRCUIT_BREAKER: LazyLock<CircuitBreaker> = LazyLock::new(CircuitBreaker::new);
 
 const CURRENT_TAB: &str = "current";
 
@@ -23,9 +32,10 @@ impl Orchestrator {
         tab: Option<String>,
         session: Option<String>,
         meta: HashMap<String, String>,
+        show_last_intent: bool,
     ) -> Result<()> {
         if let Some(record) = self.state.get_pane(&pane_name).await? {
-            return self.open_existing_pane(record, session, meta).await;
+            return self.open_existing_pane(record, session, meta, show_last_intent).await;
         }
 
         self.create_pane(pane_name, tab, session, meta).await
@@ -130,6 +140,7 @@ impl Orchestrator {
         record: PaneRecord,
         session: Option<String>,
         meta: HashMap<String, String>,
+        show_last_intent: bool,
     ) -> Result<()> {
         if let Some(requested_session) = session {
             if requested_session != record.session {
@@ -172,7 +183,62 @@ impl Orchestrator {
         }
 
         self.state.touch_pane(&record.pane_name, &meta).await?;
+
+        // Show last intent on resume if enabled and history exists
+        if show_last_intent {
+            if let Ok(history) = self.state.get_history(&record.pane_name, Some(1)).await {
+                if let Some(last_entry) = history.first() {
+                    self.display_resume_context(&record.pane_name, last_entry);
+                }
+            }
+        }
+
         Ok(())
+    }
+
+    /// Display a brief resume context when returning to a pane.
+    fn display_resume_context(&self, _pane_name: &str, entry: &IntentEntry) {
+        use chrono::{Local, TimeZone};
+        use chrono_humanize::HumanTime;
+
+        // Convert to local time for relative display
+        let local_time = Local.from_utc_datetime(&entry.timestamp.naive_utc());
+        let human_time = HumanTime::from(local_time);
+
+        // Determine type icon
+        let type_icon = match entry.entry_type {
+            IntentType::Milestone => "★",
+            IntentType::Checkpoint => "●",
+            IntentType::Exploration => "◈",
+        };
+
+        // Source indicator
+        let source_indicator = match entry.source {
+            IntentSource::Agent => " 🤖",
+            IntentSource::Automated => " ⚡",
+            IntentSource::Manual => "",
+        };
+
+        // Check if terminal supports color
+        use std::io::IsTerminal;
+        let use_color = std::env::var("NO_COLOR").is_err() && std::io::stderr().is_terminal();
+
+        if use_color {
+            use colored::Colorize;
+            eprintln!(
+                "{} {} {} {}{}",
+                "Resuming:".cyan(),
+                type_icon.yellow(),
+                entry.summary.white(),
+                human_time.to_string().dimmed(),
+                source_indicator
+            );
+        } else {
+            eprintln!(
+                "Resuming: {} {} ({}){}",
+                type_icon, entry.summary, human_time, source_indicator
+            );
+        }
     }
 
     async fn create_pane(
@@ -286,6 +352,144 @@ impl Orchestrator {
                 .context("failed to create tab")?;
             Ok(true)
         }
+    }
+
+    // ========================================================================
+    // Intent History Methods (Perth v2.0)
+    // ========================================================================
+
+    /// Log an intent entry for a pane
+    pub async fn log_intent(&mut self, pane_name: &str, entry: &IntentEntry) -> Result<()> {
+        self.state.log_intent(pane_name, entry).await
+    }
+
+    /// Get intent history for a pane
+    pub async fn get_history(&mut self, pane_name: &str, limit: Option<usize>) -> Result<Vec<IntentEntry>> {
+        self.state.get_history(pane_name, limit).await
+    }
+
+    /// Generate an LLM-powered snapshot of recent work
+    ///
+    /// Requires user consent to be granted before sending data to an LLM provider.
+    /// The 'none' provider does not require consent (no data is sent).
+    ///
+    /// Uses a circuit breaker to prevent cascading failures:
+    /// - Opens after 3 consecutive failures
+    /// - Half-opens after 5 minute cooldown
+    /// - Single success closes the circuit
+    pub async fn snapshot(&mut self, pane_name: &str, llm_config: &LLMConfig, consent_given: bool) -> Result<SnapshotResult> {
+        const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(30);
+
+        // Check circuit breaker first (before any expensive operations)
+        if llm_config.provider != "none" {
+            LLM_CIRCUIT_BREAKER.allow_request().map_err(|msg| anyhow!("{}", msg))?;
+        }
+
+        // Create LLM provider
+        let provider = create_provider(llm_config);
+        if !provider.is_available() {
+            return Err(anyhow!(
+                "LLM provider '{}' is not available. Configure API key or use a different provider.",
+                llm_config.provider
+            ));
+        }
+
+        // Check consent for providers that send data externally
+        // The 'none' provider doesn't send data, so it doesn't require consent
+        if llm_config.provider != "none" && !consent_given {
+            return Err(anyhow!(
+                "LLM consent not granted.\n\n\
+                The snapshot command sends shell history, git diff, and file information\n\
+                to '{}' for AI-powered summarization.\n\n\
+                To grant consent, run:\n\
+                  zdrive config consent --grant\n\n\
+                To see what data would be sent:\n\
+                  zdrive config consent --help",
+                llm_config.provider
+            ));
+        }
+
+        // Collect context
+        let collector = ContextCollector::new()
+            .context("failed to create context collector")?;
+
+        let cwd = std::env::current_dir().ok();
+        let context = collector
+            .collect(pane_name, cwd.as_deref())
+            .context("failed to collect context")?;
+
+        // Get existing summary if any (to provide continuity)
+        let existing = self.state.get_history(pane_name, Some(1)).await.ok()
+            .and_then(|h| h.into_iter().next())
+            .map(|e| e.summary);
+
+        let context = if let Some(summary) = existing {
+            context.with_existing_summary(summary)
+        } else {
+            context
+        };
+
+        // Call LLM with timeout and track circuit breaker state
+        let llm_result = timeout(SNAPSHOT_TIMEOUT, provider.summarize(&context)).await;
+
+        // Handle the result and update circuit breaker
+        let result = match llm_result {
+            Ok(Ok(result)) => {
+                // Success - close the circuit
+                if llm_config.provider != "none" {
+                    LLM_CIRCUIT_BREAKER.record_success();
+                }
+                result
+            }
+            Ok(Err(e)) => {
+                // LLM error - record failure
+                if llm_config.provider != "none" {
+                    LLM_CIRCUIT_BREAKER.record_failure();
+                }
+                return Err(e).context("LLM summarization failed");
+            }
+            Err(_) => {
+                // Timeout - record failure
+                if llm_config.provider != "none" {
+                    LLM_CIRCUIT_BREAKER.record_failure();
+                }
+                return Err(anyhow!(
+                    "LLM request timed out after {} seconds.\n\n\
+                    You can still log entries manually:\n\
+                    zdrive pane log {} \"<your summary>\"",
+                    SNAPSHOT_TIMEOUT.as_secs(),
+                    pane_name
+                ));
+            }
+        };
+
+        // Determine entry type from LLM suggestion
+        let entry_type = match result.suggested_type.as_deref() {
+            Some("milestone") => IntentType::Milestone,
+            Some("exploration") => IntentType::Exploration,
+            _ => IntentType::Checkpoint,
+        };
+
+        // Create and store the intent entry
+        let entry = IntentEntry::new(&result.summary)
+            .with_type(entry_type)
+            .with_source(IntentSource::Automated)
+            .with_artifacts(result.key_files.clone());
+
+        self.state.log_intent(pane_name, &entry).await
+            .context("failed to log generated intent")?;
+
+        Ok(SnapshotResult {
+            summary: result.summary,
+            entry_type,
+            key_files: result.key_files,
+            tokens_used: result.tokens_used,
+        })
+    }
+
+    /// Migrate from v1.0 (znav:*) to v2.0 (perth:*) keyspace
+    pub async fn migrate_keyspace(&mut self, dry_run: bool) -> Result<MigrationResult> {
+        self.state.migrate_keyspace(dry_run).await
     }
 
     pub async fn visualize(&mut self) -> Result<()> {
@@ -473,4 +677,17 @@ fn count_panes_recursive(value: &Value) -> usize {
         }
         _ => 0,
     }
+}
+
+/// Result of a snapshot operation
+#[derive(Debug, Clone)]
+pub struct SnapshotResult {
+    /// The generated summary
+    pub summary: String,
+    /// The entry type determined by the LLM
+    pub entry_type: IntentType,
+    /// Key files identified
+    pub key_files: Vec<String>,
+    /// Tokens used (for cost tracking)
+    pub tokens_used: Option<u32>,
 }

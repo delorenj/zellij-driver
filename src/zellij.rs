@@ -1,14 +1,85 @@
 use anyhow::{anyhow, Context, Result};
+use semver::{Version, VersionReq};
 use serde_json::Value;
 use std::env;
 use std::process::Stdio;
+use std::sync::OnceLock;
 use tokio::process::Command;
+
+const MIN_ZELLIJ_VERSION: &str = ">=0.39.0";
+
+static VERSION_CHECK: OnceLock<Result<Version, String>> = OnceLock::new();
 
 pub struct ZellijDriver;
 
 impl ZellijDriver {
     pub fn new() -> Self {
         Self
+    }
+
+    /// Check Zellij version meets minimum requirements.
+    /// This is cached after the first successful check.
+    pub async fn check_version(&self) -> Result<Version> {
+        // Return cached result if available
+        if let Some(result) = VERSION_CHECK.get() {
+            return result
+                .clone()
+                .map_err(|e| anyhow!("{}", e));
+        }
+
+        let result = self.get_zellij_version().await;
+
+        match &result {
+            Ok(version) => {
+                let req = VersionReq::parse(MIN_ZELLIJ_VERSION)
+                    .expect("invalid version requirement");
+
+                if !req.matches(version) {
+                    let err_msg = format!(
+                        "Zellij version {} is too old. Perth requires Zellij {} or later.\n\
+                         \n\
+                         To upgrade Zellij:\n\
+                         • Cargo: cargo install zellij --locked\n\
+                         • Homebrew: brew upgrade zellij\n\
+                         • Linux: https://zellij.dev/documentation/installation",
+                        version, MIN_ZELLIJ_VERSION.trim_start_matches(">=")
+                    );
+                    let _ = VERSION_CHECK.set(Err(err_msg.clone()));
+                    return Err(anyhow!("{}", err_msg));
+                }
+
+                let _ = VERSION_CHECK.set(Ok(version.clone()));
+                Ok(version.clone())
+            }
+            Err(e) => {
+                let err_msg = e.to_string();
+                let _ = VERSION_CHECK.set(Err(err_msg.clone()));
+                Err(anyhow!("{}", err_msg))
+            }
+        }
+    }
+
+    async fn get_zellij_version(&self) -> Result<Version> {
+        let output = Command::new("zellij")
+            .arg("--version")
+            .output()
+            .await
+            .context("failed to run 'zellij --version'. Is Zellij installed?")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow!("zellij --version failed: {}", stderr.trim()));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // Output format: "zellij 0.39.0" or similar
+        let version_str = stdout
+            .trim()
+            .strip_prefix("zellij ")
+            .unwrap_or(stdout.trim());
+
+        Version::parse(version_str)
+            .with_context(|| format!("failed to parse Zellij version: {}", version_str))
     }
 
     pub fn active_session_name(&self) -> Option<String> {

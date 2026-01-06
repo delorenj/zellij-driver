@@ -1,4 +1,4 @@
-use crate::types::PaneRecord;
+use crate::types::{IntentEntry, PaneRecord};
 use anyhow::{Context, Result};
 use chrono::Utc;
 use redis::aio::MultiplexedConnection;
@@ -7,6 +7,7 @@ use redis::AsyncIter;
 use std::collections::HashMap;
 
 const META_PREFIX: &str = "meta:";
+const DEFAULT_HISTORY_LIMIT: usize = 100;
 
 pub struct StateManager {
     conn: MultiplexedConnection,
@@ -153,8 +154,154 @@ impl StateManager {
         }
         Ok(panes)
     }
+
+    // ========================================================================
+    // Intent History Methods (Perth v2.0)
+    // ========================================================================
+
+    /// Log an intent entry for a pane.
+    /// - LPUSH to history list (newest first)
+    /// - Update last_intent on pane hash
+    /// - LTRIM to maintain max entries
+    pub async fn log_intent(&mut self, pane_name: &str, entry: &IntentEntry) -> Result<()> {
+        let history_key = history_key(pane_name);
+        let pane_key = pane_key(pane_name);
+
+        // Serialize entry to JSON
+        let json = serde_json::to_string(entry)
+            .context("failed to serialize IntentEntry")?;
+
+        // LPUSH to add newest entry at head of list
+        let _: () = self.conn.lpush(&history_key, &json).await?;
+
+        // Update last_intent summary on pane hash for quick access
+        let _: () = self.conn.hset(&pane_key, "last_intent", &entry.summary).await?;
+        let _: () = self.conn.hset(&pane_key, "last_intent_at", entry.timestamp.to_rfc3339()).await?;
+
+        // LTRIM to maintain max entries (keep indices 0 to LIMIT-1)
+        let _: () = self.conn.ltrim(&history_key, 0, (DEFAULT_HISTORY_LIMIT - 1) as isize).await?;
+
+        Ok(())
+    }
+
+    /// Get intent history for a pane.
+    /// Returns entries newest-first, up to the specified limit.
+    pub async fn get_history(&mut self, pane_name: &str, limit: Option<usize>) -> Result<Vec<IntentEntry>> {
+        let history_key = history_key(pane_name);
+        let limit = limit.unwrap_or(DEFAULT_HISTORY_LIMIT);
+
+        // LRANGE 0 to (limit-1) gets newest entries
+        let entries: Vec<String> = self.conn.lrange(&history_key, 0, (limit - 1) as isize).await?;
+
+        let mut history = Vec::with_capacity(entries.len());
+        for json in entries {
+            let entry: IntentEntry = serde_json::from_str(&json)
+                .context("failed to deserialize IntentEntry from history")?;
+            history.push(entry);
+        }
+
+        Ok(history)
+    }
+
+    /// Get the count of history entries for a pane.
+    pub async fn get_history_count(&mut self, pane_name: &str) -> Result<usize> {
+        let history_key = history_key(pane_name);
+        let count: usize = self.conn.llen(&history_key).await?;
+        Ok(count)
+    }
+
+    /// Clear all history for a pane.
+    pub async fn clear_history(&mut self, pane_name: &str) -> Result<()> {
+        let history_key = history_key(pane_name);
+        let _: () = self.conn.del(&history_key).await?;
+        Ok(())
+    }
+
+    // ========================================================================
+    // Migration Methods (v1.0 → v2.0)
+    // ========================================================================
+
+    /// Migrate from znav:* to perth:* keyspace.
+    /// Returns (migrated_count, skipped_count, error_count).
+    pub async fn migrate_keyspace(&mut self, dry_run: bool) -> Result<MigrationResult> {
+        let mut result = MigrationResult::default();
+
+        // Scan for znav:pane:* keys (v1.0 pane data)
+        // Collect all keys first to release the iterator borrow
+        let znav_keys: Vec<String> = {
+            let mut iter: AsyncIter<String> = self.conn.scan_match("znav:pane:*").await?;
+            let mut keys = Vec::new();
+            while let Some(key) = iter.next_item().await {
+                // Skip history keys if any exist in v1 format
+                if !key.contains(":history") {
+                    keys.push(key);
+                }
+            }
+            keys
+        };
+
+        result.total_keys = znav_keys.len();
+
+        for old_key in znav_keys {
+            // Extract pane name from znav:pane:<name>
+            let pane_name = match old_key.strip_prefix("znav:pane:") {
+                Some(name) => name.to_string(),
+                None => {
+                    result.errors.push(format!("Invalid key format: {}", old_key));
+                    result.error_count += 1;
+                    continue;
+                }
+            };
+
+            let new_key = format!("perth:pane:{}", pane_name);
+
+            // Check if target key already exists
+            let exists: bool = self.conn.exists(&new_key).await?;
+            if exists {
+                result.skipped.push(format!("{} -> {} (already exists)", old_key, new_key));
+                result.skipped_count += 1;
+                continue;
+            }
+
+            if dry_run {
+                result.would_migrate.push(format!("{} -> {}", old_key, new_key));
+                result.migrated_count += 1;
+            } else {
+                // Copy hash data to new key
+                let data: HashMap<String, String> = self.conn.hgetall(&old_key).await?;
+                if !data.is_empty() {
+                    let fields: Vec<(String, String)> = data.into_iter().collect();
+                    let _: () = self.conn.hset_multiple(&new_key, &fields).await?;
+                    result.migrated.push(format!("{} -> {}", old_key, new_key));
+                    result.migrated_count += 1;
+                } else {
+                    result.skipped.push(format!("{} (empty)", old_key));
+                    result.skipped_count += 1;
+                }
+            }
+        }
+
+        Ok(result)
+    }
+}
+
+/// Result of a keyspace migration operation.
+#[derive(Debug, Default)]
+pub struct MigrationResult {
+    pub total_keys: usize,
+    pub migrated_count: usize,
+    pub skipped_count: usize,
+    pub error_count: usize,
+    pub migrated: Vec<String>,
+    pub skipped: Vec<String>,
+    pub would_migrate: Vec<String>,
+    pub errors: Vec<String>,
 }
 
 fn pane_key(pane_name: &str) -> String {
     format!("znav:pane:{}", pane_name)
+}
+
+fn history_key(pane_name: &str) -> String {
+    format!("perth:pane:{}:history", pane_name)
 }
