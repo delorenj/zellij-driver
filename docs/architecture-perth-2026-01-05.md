@@ -2031,6 +2031,7 @@ Secret leakage is catastrophic - fail-closed is only acceptable approach. False 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-05 | delorenj | Initial architecture |
+| 1.1 | 2026-01-06 | delorenj | Added Session Restoration Component (v2.1) |
 
 ---
 
@@ -2062,6 +2063,502 @@ Run `/sprint-planning` to:
 **This document was created using BMAD Method v6 - Phase 3 (Solutioning)**
 
 *To continue: Run `/workflow-status` to see your progress and next recommended workflow.*
+
+---
+
+## Session Restoration Component (v2.1)
+
+**Added:** 2026-01-06
+**Status:** Proposed
+
+This section defines the restoration component that provides session persistence beyond Zellij's built-in resurrection feature. The restoration module captures working directories, running commands, scroll positions, and git worktree context—enabling more robust session recovery.
+
+### Architectural Drivers for Restoration
+
+| ID | Requirement | Architectural Impact |
+|----|-------------|---------------------|
+| NFR-REST-001 | Snapshot latency <500ms | Parallel state capture, async I/O |
+| NFR-REST-002 | 100% structure fidelity | Capture all tab/pane topology, positions |
+| NFR-REST-003 | Storage efficiency <10KB delta | Incremental snapshots, compression |
+| NFR-REST-004 | Graceful degradation | Continue with partial restore if CWD missing |
+| NFR-REST-005 | Event integration | Publish snapshot/restore events to Bloodbank |
+| NFR-REST-006 | Secret safety | Apply SecretFilter to command history in snapshots |
+
+### Component: Restoration Module (`restoration.rs`)
+
+**Purpose:** Capture and restore complete session state including working directories, running commands, and git context
+
+**Responsibilities:**
+- Capture session topology (tabs, panes, positions)
+- Capture per-pane context (CWD, running command, scroll position)
+- Store snapshots to Redis with TTL
+- Restore session state from snapshot
+- Support incremental snapshots (diff from last)
+- Integrate with iMi worktree context (optional)
+
+**Interfaces:**
+```rust
+pub struct RestorationManager {
+    state: StateManager,
+    zellij: ZellijDriver,
+    events: Option<EventPublisher>,
+}
+
+impl RestorationManager {
+    /// Capture current session state as named snapshot
+    pub async fn snapshot(&self, name: &str) -> Result<SessionSnapshot>;
+
+    /// Restore session from named snapshot
+    pub async fn restore(&self, name: &str) -> Result<RestoreReport>;
+
+    /// List available snapshots
+    pub async fn list_snapshots(&self) -> Result<Vec<SnapshotMeta>>;
+
+    /// Delete snapshot by name
+    pub async fn delete_snapshot(&self, name: &str) -> Result<()>;
+
+    /// Capture incremental delta from last snapshot
+    pub async fn snapshot_incremental(&self, name: &str) -> Result<SessionSnapshot>;
+
+    /// Get diff between two snapshots
+    pub async fn diff(&self, a: &str, b: &str) -> Result<SnapshotDiff>;
+}
+```
+
+**Dependencies:** StateManager, ZellijDriver, EventPublisher
+
+**FRs Addressed:** New FR-026 through FR-030 (see below)
+
+---
+
+### Restoration Data Model
+
+**Core Entities:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       SessionSnapshot                            │
+│  name: String (user-provided identifier)                        │
+│  created_at: DateTime<Utc>                                      │
+│  session_name: String (Zellij session)                          │
+│  is_incremental: bool                                           │
+│  parent_snapshot: Option<String>                                │
+│  tabs: Vec<TabSnapshot>                                         │
+│  metadata: HashMap<String, String>                              │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         TabSnapshot                              │
+│  name: String                                                   │
+│  position: u32                                                  │
+│  is_active: bool                                                │
+│  panes: Vec<PaneSnapshot>                                       │
+│  layout_hint: LayoutHint (tiled, stacked, custom)              │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         PaneSnapshot                             │
+│  name: Option<String>                                           │
+│  position: PanePosition (row, col, width, height)              │
+│  cwd: PathBuf                                                   │
+│  running_command: Option<String>                                │
+│  scroll_offset: u32                                             │
+│  is_focused: bool                                               │
+│  env_vars: Option<HashMap<String, String>>                     │
+│  git_branch: Option<String>                                     │
+│  imi_worktree: Option<String> (iMi integration)                │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                        RestoreReport                             │
+│  snapshot_name: String                                          │
+│  tabs_restored: u32                                             │
+│  panes_restored: u32                                            │
+│  warnings: Vec<RestoreWarning>                                  │
+│  errors: Vec<RestoreError>                                      │
+│  duration_ms: u64                                               │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                        RestoreWarning                            │
+│  pane: String                                                   │
+│  issue: WarningType (CwdMissing, CommandUnavailable, etc.)     │
+│  fallback: String (what was done instead)                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Redis Schema for Restoration
+
+**Keyspace: `perth:snapshots:*`**
+
+```
+# Snapshot metadata (Hash)
+perth:snapshots:{session}:{name}
+  Fields:
+    created_at   -> String (ISO 8601)
+    session      -> String (Zellij session name)
+    is_incremental -> bool
+    parent       -> Option<String> (parent snapshot name)
+    tab_count    -> u32
+    pane_count   -> u32
+    size_bytes   -> u32
+
+# Snapshot data (String, JSON-serialized SessionSnapshot)
+perth:snapshots:{session}:{name}:data
+  Value: JSON SessionSnapshot (gzip compressed if >1KB)
+  TTL: 30 days (configurable via restoration.snapshot_ttl_days)
+
+# Snapshot index (Sorted Set, by creation time)
+perth:snapshots:{session}:index
+  Members: snapshot names
+  Scores: Unix timestamp of creation
+
+# Latest snapshot pointer (String)
+perth:snapshots:{session}:latest
+  Value: name of most recent snapshot
+```
+
+**Storage Estimates:**
+| Entity | Size | Count | Total |
+|--------|------|-------|-------|
+| Snapshot metadata | 200 bytes | 50 snapshots | 10 KB |
+| Snapshot data (full) | 2-5 KB | 10 full | 50 KB |
+| Snapshot data (incremental) | 200-500 bytes | 40 incremental | 20 KB |
+| **Total per session** | | | **~80 KB** |
+
+---
+
+### Restoration CLI Commands
+
+```bash
+# Create named snapshot
+znav snapshot create <name> [--incremental]
+
+# List available snapshots
+znav snapshot list [--session <session>] [--format text|json]
+
+# Restore from snapshot
+znav snapshot restore <name> [--dry-run]
+
+# Delete snapshot
+znav snapshot delete <name>
+
+# Show snapshot diff
+znav snapshot diff <snapshot-a> <snapshot-b>
+
+# Auto-snapshot on interval (background daemon)
+znav snapshot daemon --interval 10m
+```
+
+---
+
+### Restoration Orchestrator Integration
+
+The `Orchestrator` struct gains new methods for restoration:
+
+```rust
+impl Orchestrator {
+    // ... existing methods ...
+
+    // Restoration (v2.1)
+    pub async fn create_snapshot(&mut self, name: &str, incremental: bool) -> Result<SessionSnapshot>;
+    pub async fn restore_snapshot(&mut self, name: &str) -> Result<RestoreReport>;
+    pub async fn list_snapshots(&mut self) -> Result<Vec<SnapshotMeta>>;
+    pub async fn delete_snapshot(&mut self, name: &str) -> Result<()>;
+}
+```
+
+---
+
+### Restoration NFR Coverage
+
+#### NFR-REST-001: Snapshot Latency <500ms
+
+**Requirement:** Full session snapshot completes in <500ms
+
+**Architecture Solution:**
+- **Parallel pane capture** - spawn async tasks per pane
+- **Cached Zellij layout** - reuse layout dump across panes
+- **Streaming Redis writes** - pipeline multiple HSET calls
+
+**Implementation Notes:**
+```rust
+pub async fn snapshot(&self, name: &str) -> Result<SessionSnapshot> {
+    let layout = self.zellij.dump_layout()?;  // Single call
+
+    // Parallel pane capture
+    let pane_futures: Vec<_> = layout.panes.iter()
+        .map(|p| self.capture_pane_state(p))
+        .collect();
+
+    let pane_snapshots = futures::future::join_all(pane_futures).await;
+
+    // Pipeline Redis writes
+    let mut pipe = redis::pipe();
+    // ... batch operations
+    pipe.query_async(&mut self.state.conn).await?;
+}
+```
+
+**Validation:**
+- Benchmark: 50-pane session snapshot <500ms
+- CI gate: p95 < 500ms
+
+---
+
+#### NFR-REST-002: 100% Structure Fidelity
+
+**Requirement:** Restored session matches original tab/pane topology exactly
+
+**Architecture Solution:**
+- Capture tab positions, not just names
+- Capture pane geometry (row, col, width%, height%)
+- Store focus state per tab and pane
+- Preserve layout type (tiled, stacked, etc.)
+
+**Implementation Notes:**
+- Use `zellij action dump-layout` for structure
+- Parse layout KDL for pane positions
+- Store as normalized coordinates (percentages)
+
+**Validation:**
+- Integration test: snapshot → restore → dump-layout diff = empty
+- Visual comparison in CI (screenshot diff)
+
+---
+
+#### NFR-REST-003: Storage Efficiency <10KB Delta
+
+**Requirement:** Incremental snapshots average <10KB
+
+**Architecture Solution:**
+- **Structural diffing** - only store changed panes
+- **Reference encoding** - `"cwd": "@parent"` for unchanged fields
+- **gzip compression** - for snapshots >1KB
+- **TTL cleanup** - auto-expire old snapshots
+
+**Implementation Notes:**
+```rust
+pub async fn snapshot_incremental(&self, name: &str) -> Result<SessionSnapshot> {
+    let parent = self.get_latest_snapshot()?;
+    let current = self.capture_current_state()?;
+
+    // Compute diff
+    let diff = self.diff_snapshots(&parent, &current);
+
+    SessionSnapshot {
+        is_incremental: true,
+        parent_snapshot: Some(parent.name),
+        tabs: diff.changed_tabs,  // Only changed
+        // ...
+    }
+}
+```
+
+**Validation:**
+- Measure average incremental size across test sessions
+- Target: <500 bytes for typical "moved to different pane" change
+
+---
+
+#### NFR-REST-004: Graceful Degradation
+
+**Requirement:** Restoration continues with partial success if some elements can't be restored
+
+**Architecture Solution:**
+- **Warning accumulation** - collect issues, don't fail fast
+- **Fallback behaviors:**
+  - CWD missing → use home directory
+  - Command unavailable → skip command execution
+  - Git branch missing → warn and continue
+- **Restore report** - detailed success/warning/error breakdown
+
+**Implementation Notes:**
+```rust
+impl RestorationManager {
+    async fn restore_pane(&self, snapshot: &PaneSnapshot) -> PaneRestoreResult {
+        let mut warnings = Vec::new();
+
+        // Attempt CWD restoration
+        if !snapshot.cwd.exists() {
+            warnings.push(RestoreWarning {
+                pane: snapshot.name.clone(),
+                issue: WarningType::CwdMissing,
+                fallback: "Using home directory".into(),
+            });
+            // Use fallback CWD
+        }
+
+        // Continue with other restoration...
+        PaneRestoreResult { warnings, success: true }
+    }
+}
+```
+
+**Validation:**
+- Test: restore with deleted directories succeeds with warnings
+- Test: RestoreReport accurately reflects partial success
+
+---
+
+#### NFR-REST-005: Event Integration
+
+**Requirement:** Publish snapshot/restore events to Bloodbank
+
+**Architecture Solution:**
+- Extend `PerthEvent` enum with restoration events
+- Fire-and-forget publishing (non-blocking)
+- Include snapshot metadata in events
+
+**Events:**
+```rust
+pub enum PerthEvent {
+    // ... existing events ...
+
+    SnapshotCreated {
+        session: String,
+        name: String,
+        tab_count: u32,
+        pane_count: u32,
+        is_incremental: bool,
+        timestamp: DateTime<Utc>,
+    },
+
+    SnapshotRestored {
+        session: String,
+        name: String,
+        tabs_restored: u32,
+        panes_restored: u32,
+        warnings: u32,
+        errors: u32,
+        duration_ms: u64,
+        timestamp: DateTime<Utc>,
+    },
+}
+```
+
+**Validation:**
+- Integration test: verify events published on snapshot/restore
+- Test: restoration succeeds if Bloodbank unavailable
+
+---
+
+#### NFR-REST-006: Secret Safety
+
+**Requirement:** Command history in snapshots filtered for secrets
+
+**Architecture Solution:**
+- Apply existing `SecretFilter` to `PaneSnapshot.running_command`
+- Filter any captured environment variables
+- Log filtered content (pattern names only, not values)
+
+**Implementation Notes:**
+```rust
+impl RestorationManager {
+    fn capture_pane_state(&self, pane: &LayoutPane) -> PaneSnapshot {
+        let running_command = self.zellij.get_running_command(pane);
+
+        // Apply secret filter
+        let filtered_command = running_command.map(|cmd| {
+            self.filter.filter(&cmd).filtered
+        });
+
+        PaneSnapshot {
+            running_command: filtered_command,
+            // ...
+        }
+    }
+}
+```
+
+**Validation:**
+- Unit test: secrets redacted in snapshot
+- Fuzz test: no secrets in stored snapshot data
+
+---
+
+### New Functional Requirements (FR-026 through FR-030)
+
+| FR ID | FR Name | Description |
+|-------|---------|-------------|
+| FR-026 | Session Snapshot Creation | User can create named snapshots of current session state |
+| FR-027 | Session Restoration | User can restore session from named snapshot |
+| FR-028 | Snapshot Listing | User can list available snapshots with metadata |
+| FR-029 | Incremental Snapshots | System supports delta snapshots from previous state |
+| FR-030 | Snapshot Auto-Daemon | Background process can auto-snapshot on interval |
+
+---
+
+### Module Structure Update
+
+```
+src/
+  ├── main.rs
+  ├── cli.rs                  # Add Snapshot subcommand
+  ├── orchestrator.rs         # Add restoration methods
+  ├── state.rs
+  ├── zellij.rs               # Add layout parsing, command capture
+  ├── llm/
+  ├── filter.rs
+  ├── events.rs               # Add SnapshotCreated, SnapshotRestored
+  ├── output.rs               # Add snapshot formatters
+  ├── types.rs                # Add SessionSnapshot, etc.
+  ├── restoration/            # NEW MODULE
+  │   ├── mod.rs              # RestorationManager
+  │   ├── capture.rs          # State capture logic
+  │   ├── restore.rs          # Restoration logic
+  │   ├── diff.rs             # Incremental diffing
+  │   └── daemon.rs           # Auto-snapshot daemon
+  └── error.rs
+```
+
+---
+
+### Trade-offs: Restoration Component
+
+#### Decision 7: Restoration in Core vs. Separate Plugin
+
+**Trade-off:**
+- ✓ Gain: Unified codebase, shared Redis/Zellij drivers, consistent UX
+- ✗ Lose: Larger binary, tighter coupling
+
+**Rationale:**
+Restoration is core to Perth's value proposition—it extends pane context with session durability. Sharing StateManager and ZellijDriver avoids duplication. As discussed, this is a module within Zellij Driver, not a separate plugin.
+
+---
+
+#### Decision 8: Incremental vs. Full Snapshots Only
+
+**Trade-off:**
+- ✓ Gain: Storage efficiency (10x reduction), faster writes
+- ✗ Lose: Implementation complexity, restoration must chain parents
+
+**Rationale:**
+Users may snapshot frequently (every 10 minutes). Full snapshots would consume ~5KB each, adding 720KB/day. Incremental reduces to ~500 bytes average. Complexity acceptable given storage savings.
+
+---
+
+#### Decision 9: Daemon vs. Shell Hook for Auto-Snapshot
+
+**Trade-off:**
+- ✓ Gain (Daemon): Reliable interval, no shell hook complexity
+- ✗ Lose (Daemon): Another process, resource usage
+
+**Rationale:**
+Shell hooks already have latency constraints (NFR-010: <10ms). A separate daemon with `znav snapshot daemon` allows configurable intervals without shell overhead. Can be managed via systemd user unit.
+
+---
+
+### Risks: Restoration Component
+
+| Risk | Impact | Probability | Mitigation |
+|------|--------|-------------|------------|
+| Layout dump format changes | High | Low | Version check, fallback parser |
+| Stale snapshot after refactoring | Medium | Medium | Warnings on restore, suggest fresh snapshot |
+| Storage bloat from many snapshots | Medium | Low | TTL cleanup, snapshot count limits |
+| Restore fails on different Zellij version | Medium | Medium | Store Zellij version, warn on mismatch |
 
 ---
 

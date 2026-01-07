@@ -17,9 +17,11 @@ current_phase: 4  # Implementation
 
 # Sprint status
 sprint_status:
-  current_sprint: 5  # Next sprint to plan/execute
-  total_sprints_planned: 6
+  current_sprint: 5  # Now in progress
+  total_sprints_planned: 7
   completed_sprints: 4
+  sprint_5_status: "planned - ready for implementation"
+  sprint_6_status: "planned - Session Restoration (v2.1)"
 
   sprint_1:
     status: completed
@@ -65,52 +67,109 @@ epics:
   EPIC-001_navigation_primitives: complete  # v1.0
   EPIC-002_manual_intent_logging: complete   # Sprint 1-2
   EPIC-003_automated_context_capture: complete  # Sprint 3-4
-  EPIC-004_agent_integration: partial  # STORY-022,023,024 done; STORY-025,026,027 pending
+  EPIC-004_agent_integration: partial  # STORY-022,023,024 done; STORY-025,026,027,036-039 pending
   EPIC-005_advanced_intelligence: partial  # STORY-028,029,030,031,032 done; STORY-033,034,035 pending
+  EPIC-006_session_restoration: planned  # STORY-040 (Sprint 5), STORY-041-045 (Sprint 6)
 
 # Remaining backlog
 remaining_backlog:
   sprint_5:
-    estimated_points: 25
+    estimated_points: 21
+    goal: "Enable Claude-driven parallel workflow orchestration"
     stories:
+      - id: STORY-036
+        title: "Tab Create with Correlation ID"
+        points: 3
+        priority: should_have
+        epic: EPIC-004
+        description: "Tab naming with correlation ID suffix for traceability"
+      - id: STORY-037
+        title: "Batch Pane Spawning"
+        points: 5
+        priority: should_have
+        epic: EPIC-004
+        description: "Create multiple named panes in single command"
+      - id: STORY-038
+        title: "Claude Skill Documentation"
+        points: 2
+        priority: should_have
+        epic: EPIC-004
+        description: "SKILL.md and references for Claude discovery"
+      - id: STORY-039
+        title: "Tab Naming Conventions"
+        points: 2
+        priority: could_have
+        epic: EPIC-004
+        description: "Enforce consistent tab naming patterns"
       - id: STORY-025
         title: "Bloodbank Event Publisher"
         points: 5
         priority: should_have
         epic: EPIC-004
+        description: "Publish milestone events for correlation tracking"
       - id: STORY-026
         title: "Bloodbank Config"
         points: 2
         priority: should_have
         epic: EPIC-004
+        description: "Configuration for Bloodbank connection"
       - id: STORY-027
         title: "History Type Filter"
         points: 2
         priority: should_have
         epic: EPIC-004
-      - id: STORY-033
-        title: "Goal Setting Command"
+        description: "Filter history by entry type"
+      - id: STORY-040
+        title: "Restoration Data Model & Redis Schema"
+        points: 3
+        priority: should_have
+        epic: EPIC-006
+        description: "Foundation for v2.1 restoration feature"
+
+  sprint_6:
+    estimated_points: 21
+    goal: "Complete Session Restoration feature (v2.1)"
+    stories:
+      - id: STORY-041
+        title: "State Capture Module"
+        points: 5
+        priority: should_have
+        epic: EPIC-006
+        description: "capture.rs - Parallel state capture from Zellij layout"
+      - id: STORY-042
+        title: "Snapshot Create & List Commands"
+        points: 5
+        priority: should_have
+        epic: EPIC-006
+        description: "CLI for creating and listing snapshots"
+      - id: STORY-043
+        title: "Restore Command"
+        points: 5
+        priority: should_have
+        epic: EPIC-006
+        description: "CLI for restoring from snapshot"
+      - id: STORY-044
+        title: "Incremental Snapshot Support"
+        points: 3
+        priority: should_have
+        epic: EPIC-006
+        description: "Delta snapshots with parent chaining"
+      - id: STORY-045
+        title: "Snapshot Daemon"
         points: 3
         priority: could_have
-        epic: EPIC-005
-      - id: STORY-034
-        title: "Progress Estimation"
-        points: 5
-        priority: could_have
-        epic: EPIC-005
-      - id: STORY-035
-        title: "Search Command"
-        points: 8
-        priority: could_have
-        epic: EPIC-005
+        epic: EPIC-006
+        description: "Background auto-snapshot on interval"
 
-  sprint_6_plus:
+  sprint_7_plus:
     description: "Phase 4 Advanced Intelligence (Could Have)"
     stories:
+      - "STORY-033: Goal Setting Command (3 points)"
+      - "STORY-034: Progress Estimation (5 points)"
+      - "STORY-035: Search Command (8 points)"
       - "Semantic search with vector DB"
       - "Pattern recognition"
       - "Holocene dashboard integration"
-      - "Advanced goal tracking"
 
 # MVP status
 mvp_status:
@@ -132,13 +191,29 @@ mvp_status:
     - Keyspace migration
 
 # Next recommended workflow
-next_workflow: retrospective_or_release
+next_workflow: sprint_5_implementation
 next_workflow_reason: |
-  MVP complete with 4 sprints delivered (105 points, 24 stories).
-  All Must Have requirements satisfied. Options:
-  1. Release v2.0 MVP and gather user feedback
-  2. Continue to Sprint 5 for Should Have features (Bloodbank integration)
-  3. Run /retrospective to close out Phase 4
+  Sprint 5 revised to focus on Agentic Workspace Orchestration + Restoration Foundation.
+
+  New stories for Sprint 5:
+  - STORY-036: Tab Create with Correlation ID
+  - STORY-037: Batch Pane Spawning
+  - STORY-038: Claude Skill Documentation (completed)
+  - STORY-039: Tab Naming Conventions
+  - STORY-040: Restoration Data Model & Redis Schema (v2.1 foundation)
+
+  Sprint 6 planned for Session Restoration (v2.1):
+  - STORY-041: State Capture Module
+  - STORY-042: Snapshot Create & List Commands
+  - STORY-043: Restore Command
+  - STORY-044: Incremental Snapshot Support
+  - STORY-045: Snapshot Daemon
+
+  Target milestones:
+  - Sprint 5: "Parallel PR fix" dev story with Claude orchestration
+  - Sprint 6: Robust session persistence beyond Zellij's resurrection
+
+  Next step: Run `/dev-story STORY-036` to implement tab correlation ID support.
 
 # Project metadata
 metadata:
