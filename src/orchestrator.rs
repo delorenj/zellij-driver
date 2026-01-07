@@ -1,3 +1,4 @@
+use crate::bloodbank::EventPublisher;
 use crate::context::ContextCollector;
 use crate::llm::{create_provider, CircuitBreaker, LLMConfig};
 use crate::state::{MigrationResult, StateManager};
@@ -19,11 +20,12 @@ const CURRENT_TAB: &str = "current";
 pub struct Orchestrator {
     state: StateManager,
     zellij: ZellijDriver,
+    events: EventPublisher,
 }
 
 impl Orchestrator {
-    pub fn new(state: StateManager, zellij: ZellijDriver) -> Self {
-        Self { state, zellij }
+    pub fn new(state: StateManager, zellij: ZellijDriver, events: EventPublisher) -> Self {
+        Self { state, zellij, events }
     }
 
     pub async fn open_pane(
@@ -139,6 +141,9 @@ impl Orchestrator {
 
         self.state.upsert_tab(&record).await?;
 
+        // Publish tab.created event
+        self.events.tab_created(&record).await;
+
         Ok(TabCreateResult {
             tab_name: effective_name,
             correlation_id,
@@ -247,6 +252,9 @@ impl Orchestrator {
                 meta,
             );
             self.state.upsert_pane(&record).await?;
+
+            // Publish pane.created event
+            self.events.pane_created(&record).await;
 
             panes_created.push(pane_name.clone());
         }
@@ -363,6 +371,9 @@ impl Orchestrator {
 
         self.state.touch_pane(&record.pane_name, &meta).await?;
 
+        // Publish pane.opened event
+        self.events.pane_opened(&record.pane_name, &record.tab, &record.session).await;
+
         // Show last intent on resume if enabled and history exists
         if show_last_intent {
             if let Ok(history) = self.state.get_history(&record.pane_name, Some(1)).await {
@@ -472,6 +483,10 @@ impl Orchestrator {
         let now = StateManager::now_string();
         let record = PaneRecord::new(pane_name, target_session, final_tab, now, meta_with_position);
         self.state.upsert_pane(&record).await?;
+
+        // Publish pane.created event
+        self.events.pane_created(&record).await;
+
         Ok(())
     }
 
@@ -539,7 +554,13 @@ impl Orchestrator {
 
     /// Log an intent entry for a pane
     pub async fn log_intent(&mut self, pane_name: &str, entry: &IntentEntry) -> Result<()> {
-        self.state.log_intent(pane_name, entry).await
+        self.state.log_intent(pane_name, entry).await?;
+
+        // Publish intent.logged event (and milestone.recorded if applicable)
+        let session = self.zellij.active_session_name();
+        self.events.intent_logged(pane_name, entry, session.as_deref()).await;
+
+        Ok(())
     }
 
     /// Get intent history for a pane

@@ -1,3 +1,4 @@
+mod bloodbank;
 mod cli;
 mod config;
 mod context;
@@ -10,6 +11,7 @@ mod types;
 mod zellij;
 
 use anyhow::{anyhow, Result};
+use bloodbank::EventPublisher;
 use clap::{CommandFactory, FromArgMatches};
 use cli::{collect_meta, command_name, Cli, Command, ConfigAction, OutputFormat, PaneAction, TabAction};
 use config::Config;
@@ -36,13 +38,14 @@ async fn run() -> Result<()> {
     let config = Config::load()?;
     let state = StateManager::new(&config.redis_url).await?;
     let zellij = ZellijDriver::new();
+    let events = EventPublisher::new(config.bloodbank.clone());
 
     // Check Zellij version for commands that interact with Zellij
     if needs_zellij_check(&cli.command) {
         zellij.check_version().await?;
     }
 
-    let mut orchestrator = Orchestrator::new(state, zellij);
+    let mut orchestrator = Orchestrator::new(state, zellij, events);
 
     match cli.command {
         Command::Pane(args) => {

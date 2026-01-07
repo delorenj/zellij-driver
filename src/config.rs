@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use toml_edit::{DocumentMut, value};
 
 const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379/";
+const DEFAULT_AMQP_URL: &str = "amqp://127.0.0.1:5672/%2f";
+const DEFAULT_BLOODBANK_EXCHANGE: &str = "bloodbank.events";
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -14,6 +16,7 @@ pub struct Config {
     pub llm: LLMConfig,
     pub privacy: PrivacyConfig,
     pub display: DisplayConfig,
+    pub bloodbank: BloodbankConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +41,30 @@ pub struct PrivacyConfig {
     pub consent_timestamp: Option<String>,
 }
 
+/// Configuration for Bloodbank event publishing (STORY-026)
+#[derive(Debug, Clone)]
+pub struct BloodbankConfig {
+    /// Whether Bloodbank integration is enabled
+    pub enabled: bool,
+    /// AMQP URL for RabbitMQ connection
+    pub amqp_url: String,
+    /// Exchange name for publishing events
+    pub exchange: String,
+    /// Routing key prefix for events (default: "perth")
+    pub routing_key_prefix: String,
+}
+
+impl Default for BloodbankConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false, // Disabled by default for graceful degradation
+            amqp_url: DEFAULT_AMQP_URL.to_string(),
+            exchange: DEFAULT_BLOODBANK_EXCHANGE.to_string(),
+            routing_key_prefix: "perth".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Default)]
 struct FileConfig {
     redis_url: Option<String>,
@@ -47,6 +74,8 @@ struct FileConfig {
     privacy: PrivacyConfigFile,
     #[serde(default)]
     display: DisplayConfigFile,
+    #[serde(default)]
+    bloodbank: BloodbankConfigFile,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -68,6 +97,14 @@ struct PrivacyConfigFile {
 #[derive(Debug, Deserialize, Default)]
 struct DisplayConfigFile {
     show_last_intent: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct BloodbankConfigFile {
+    enabled: Option<bool>,
+    amqp_url: Option<String>,
+    exchange: Option<String>,
+    routing_key_prefix: Option<String>,
 }
 
 impl Config {
@@ -100,6 +137,12 @@ impl Config {
             },
             display: DisplayConfig {
                 show_last_intent: file_config.display.show_last_intent.unwrap_or(true),
+            },
+            bloodbank: BloodbankConfig {
+                enabled: file_config.bloodbank.enabled.unwrap_or(false),
+                amqp_url: file_config.bloodbank.amqp_url.unwrap_or_else(|| DEFAULT_AMQP_URL.to_string()),
+                exchange: file_config.bloodbank.exchange.unwrap_or_else(|| DEFAULT_BLOODBANK_EXCHANGE.to_string()),
+                routing_key_prefix: file_config.bloodbank.routing_key_prefix.unwrap_or_else(|| "perth".to_string()),
             },
         })
     }
@@ -193,6 +236,38 @@ impl Config {
             if self.display.show_last_intent { " (default)" } else { "" }
         ));
 
+        // Bloodbank settings
+        lines.push(String::new());
+        lines.push("Bloodbank Settings:".to_string());
+        lines.push(format!(
+            "  enabled: {}{}",
+            if self.bloodbank.enabled { "yes" } else { "no" },
+            if !self.bloodbank.enabled { " (default)" } else { "" }
+        ));
+        if self.bloodbank.enabled || self.bloodbank.amqp_url != DEFAULT_AMQP_URL {
+            // Mask password in AMQP URL
+            let masked_amqp = mask_amqp_url(&self.bloodbank.amqp_url);
+            lines.push(format!(
+                "  amqp_url: {}{}",
+                masked_amqp,
+                if self.bloodbank.amqp_url == DEFAULT_AMQP_URL { " (default)" } else { "" }
+            ));
+        }
+        if self.bloodbank.enabled || self.bloodbank.exchange != DEFAULT_BLOODBANK_EXCHANGE {
+            lines.push(format!(
+                "  exchange: {}{}",
+                self.bloodbank.exchange,
+                if self.bloodbank.exchange == DEFAULT_BLOODBANK_EXCHANGE { " (default)" } else { "" }
+            ));
+        }
+        if self.bloodbank.enabled || self.bloodbank.routing_key_prefix != "perth" {
+            lines.push(format!(
+                "  routing_key_prefix: {}{}",
+                self.bloodbank.routing_key_prefix,
+                if self.bloodbank.routing_key_prefix == "perth" { " (default)" } else { "" }
+            ));
+        }
+
         lines.join("\n")
     }
 
@@ -206,15 +281,17 @@ impl Config {
         let valid_llm_keys = ["provider", "anthropic_api_key", "openai_api_key", "ollama_url", "model", "max_tokens"];
         let valid_privacy_keys = ["consent_given", "consent_timestamp"];
         let valid_display_keys = ["show_last_intent"];
+        let valid_bloodbank_keys = ["enabled", "amqp_url", "exchange", "routing_key_prefix"];
 
         match parts.as_slice() {
             [top_key] if *top_key == "redis_url" => {}
             ["llm", sub_key] if valid_llm_keys.contains(sub_key) => {}
             ["privacy", sub_key] if valid_privacy_keys.contains(sub_key) => {}
             ["display", sub_key] if valid_display_keys.contains(sub_key) => {}
+            ["bloodbank", sub_key] if valid_bloodbank_keys.contains(sub_key) => {}
             _ => {
                 return Err(anyhow!(
-                    "Unknown configuration key: '{}'\nValid keys: redis_url, llm.*, privacy.*, display.*",
+                    "Unknown configuration key: '{}'\nValid keys: redis_url, llm.*, privacy.*, display.*, bloodbank.*",
                     key
                 ));
             }
@@ -240,9 +317,15 @@ impl Config {
             if new_value.parse::<u32>().is_err() {
                 return Err(anyhow!("Invalid max_tokens: must be a positive integer"));
             }
-        } else if key == "privacy.consent_given" || key == "display.show_last_intent" {
+        } else if key == "privacy.consent_given" || key == "display.show_last_intent" || key == "bloodbank.enabled" {
             if !["true", "false", "yes", "no"].contains(&new_value.to_lowercase().as_str()) {
                 return Err(anyhow!("Invalid {}: must be true/false or yes/no", key.split('.').last().unwrap()));
+            }
+        } else if key == "bloodbank.amqp_url" {
+            if !new_value.starts_with("amqp://") && !new_value.starts_with("amqps://") {
+                return Err(anyhow!(
+                    "Invalid AMQP URL: must start with 'amqp://' or 'amqps://'"
+                ));
             }
         }
 
@@ -311,6 +394,23 @@ impl Config {
                     doc["display"][*sub_key] = value(new_value);
                 }
             }
+            ["bloodbank", sub_key] => {
+                // Ensure [bloodbank] table exists
+                if !doc.contains_key("bloodbank") {
+                    doc["bloodbank"] = toml_edit::Item::Table(toml_edit::Table::new());
+                }
+                old_value = doc["bloodbank"]
+                    .get(*sub_key)
+                    .and_then(|v| v.as_str().or_else(|| v.as_bool().map(|b| if b { "true" } else { "false" })))
+                    .map(|s| s.to_string());
+                // Handle boolean conversion for enabled
+                if *sub_key == "enabled" {
+                    let bool_val = matches!(new_value.to_lowercase().as_str(), "true" | "yes");
+                    doc["bloodbank"][*sub_key] = toml_edit::value(bool_val);
+                } else {
+                    doc["bloodbank"][*sub_key] = value(new_value);
+                }
+            }
             _ => unreachable!(),
         }
 
@@ -360,6 +460,23 @@ fn mask_redis_url(url: &str) -> String {
     url.to_string()
 }
 
+/// Mask password in AMQP URL for display.
+fn mask_amqp_url(url: &str) -> String {
+    // AMQP URLs: amqp://user:password@host:port/vhost
+    if let Some(at_pos) = url.find('@') {
+        if let Some(proto_end) = url.find("://") {
+            let auth_part = &url[proto_end + 3..at_pos];
+            if auth_part.contains(':') || !auth_part.is_empty() {
+                // Has auth, mask it
+                let proto = &url[..proto_end + 3];
+                let rest = &url[at_pos..];
+                return format!("{}***{}", proto, rest);
+            }
+        }
+    }
+    url.to_string()
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -367,6 +484,7 @@ impl Default for Config {
             llm: LLMConfig::default(),
             privacy: PrivacyConfig::default(),
             display: DisplayConfig::default(),
+            bloodbank: BloodbankConfig::default(),
         }
     }
 }

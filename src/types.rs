@@ -134,6 +134,15 @@ impl IntentEntry {
             IntentType::Exploration => "EXPLORATION",
         }
     }
+
+    /// Get a lowercase string for the source (for event payloads)
+    pub fn source_str(&self) -> &'static str {
+        match self.source {
+            IntentSource::Manual => "manual",
+            IntentSource::Automated => "automated",
+            IntentSource::Agent => "agent",
+        }
+    }
 }
 
 // ============================================================================
