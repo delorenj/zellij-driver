@@ -243,8 +243,8 @@ sprints:
     end_date: "2026-03-14"
     capacity_points: 30
     committed_points: 24
-    completed_points: 17
-    status: "in_progress"
+    completed_points: 24
+    status: "completed"
     goal: "Enable Claude-driven parallel workflow orchestration"
     stories:
       - story_id: "STORY-036"
@@ -268,7 +268,7 @@ sprints:
       - story_id: "STORY-039"
         title: "Tab Naming Conventions"
         points: 2
-        status: "pending"
+        status: "completed"
         priority: "could_have"
         epic: "EPIC-004"
       - story_id: "STORY-025"
@@ -286,13 +286,13 @@ sprints:
       - story_id: "STORY-027"
         title: "History Type Filter"
         points: 2
-        status: "pending"
+        status: "completed"
         priority: "should_have"
         epic: "EPIC-004"
       - story_id: "STORY-040"
         title: "Restoration Data Model & Redis Schema"
         points: 3
-        status: "pending"
+        status: "completed"
         priority: "should_have"
         epic: "EPIC-006"
 
