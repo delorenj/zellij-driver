@@ -17,6 +17,7 @@ pub struct Config {
     pub privacy: PrivacyConfig,
     pub display: DisplayConfig,
     pub bloodbank: BloodbankConfig,
+    pub tab: TabConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -65,6 +66,37 @@ impl Default for BloodbankConfig {
     }
 }
 
+/// Configuration for tab naming conventions (STORY-039)
+#[derive(Debug, Clone)]
+pub struct TabConfig {
+    /// Regex pattern for valid tab names
+    /// Default: `^[a-zA-Z0-9_-]+\([a-zA-Z0-9_-]+\)$` matches `repo(context)` format
+    pub naming_pattern: String,
+}
+
+impl Default for TabConfig {
+    fn default() -> Self {
+        Self {
+            // Pattern matches: name(context) format, e.g., "myapp(fixes)", "perth(dev)"
+            naming_pattern: r"^[a-zA-Z0-9_-]+\([a-zA-Z0-9_-]+\)$".to_string(),
+        }
+    }
+}
+
+impl TabConfig {
+    /// Check if a tab name matches the naming convention
+    pub fn validate_name(&self, name: &str) -> bool {
+        regex::Regex::new(&self.naming_pattern)
+            .map(|re| re.is_match(name))
+            .unwrap_or(false)
+    }
+
+    /// Get a human-readable description of the expected format
+    pub fn format_hint(&self) -> &'static str {
+        "name(context) - e.g., 'myapp(fixes)', 'perth(dev)'"
+    }
+}
+
 #[derive(Debug, Deserialize, Default)]
 struct FileConfig {
     redis_url: Option<String>,
@@ -76,6 +108,8 @@ struct FileConfig {
     display: DisplayConfigFile,
     #[serde(default)]
     bloodbank: BloodbankConfigFile,
+    #[serde(default)]
+    tab: TabConfigFile,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -105,6 +139,11 @@ struct BloodbankConfigFile {
     amqp_url: Option<String>,
     exchange: Option<String>,
     routing_key_prefix: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct TabConfigFile {
+    naming_pattern: Option<String>,
 }
 
 impl Config {
@@ -143,6 +182,9 @@ impl Config {
                 amqp_url: file_config.bloodbank.amqp_url.unwrap_or_else(|| DEFAULT_AMQP_URL.to_string()),
                 exchange: file_config.bloodbank.exchange.unwrap_or_else(|| DEFAULT_BLOODBANK_EXCHANGE.to_string()),
                 routing_key_prefix: file_config.bloodbank.routing_key_prefix.unwrap_or_else(|| "perth".to_string()),
+            },
+            tab: TabConfig {
+                naming_pattern: file_config.tab.naming_pattern.unwrap_or_else(|| TabConfig::default().naming_pattern),
             },
         })
     }
@@ -485,6 +527,7 @@ impl Default for Config {
             privacy: PrivacyConfig::default(),
             display: DisplayConfig::default(),
             bloodbank: BloodbankConfig::default(),
+            tab: TabConfig::default(),
         }
     }
 }

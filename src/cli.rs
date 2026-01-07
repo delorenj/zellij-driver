@@ -411,6 +411,13 @@ RELATED COMMANDS:
               help = "Correlation ID for tracing (e.g., 'pr-42', 'issue-123')")]
         correlation_id: Option<String>,
 
+        /// Enforce tab naming convention
+        ///
+        /// Fails if tab name doesn't match pattern: {name}({context})
+        /// Without --strict, non-conforming names show a warning but proceed.
+        #[arg(long, help = "Enforce naming pattern, fail on non-conforming names")]
+        strict: bool,
+
         /// Additional metadata key=value pairs
         #[arg(long = "meta", value_parser = parse_key_val,
               help = "Metadata as key=value pairs")]
