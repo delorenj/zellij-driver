@@ -296,6 +296,284 @@ impl PaneInfoOutput {
 }
 
 // ============================================================================
+// Session Restoration Types (Perth v2.1 - STORY-040)
+// ============================================================================
+
+/// Snapshot of a single pane's state for restoration.
+///
+/// Captures all information needed to recreate a pane, including
+/// its position, working directory, and running command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaneSnapshot {
+    /// Pane name (used for identification)
+    pub name: String,
+    /// Position index within the tab
+    pub position: usize,
+    /// Working directory when snapshot was taken
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// Command running in the pane (if detectable)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// Zellij pane ID (for reference, may change on restore)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane_id: Option<String>,
+    /// Whether pane was focused when snapshot was taken
+    #[serde(default)]
+    pub focused: bool,
+    /// Additional metadata from Perth tracking
+    #[serde(default)]
+    pub meta: HashMap<String, String>,
+}
+
+/// Snapshot of a tab's state including all panes.
+///
+/// Captures tab layout and pane configuration for restoration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TabSnapshot {
+    /// Tab name
+    pub name: String,
+    /// Tab index in the session
+    pub index: usize,
+    /// Whether tab was active when snapshot was taken
+    #[serde(default)]
+    pub active: bool,
+    /// Layout direction (vertical/horizontal)
+    #[serde(default)]
+    pub layout: String,
+    /// Panes within this tab, ordered by position
+    pub panes: Vec<PaneSnapshot>,
+    /// Correlation ID if tab was created with one
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
+}
+
+/// Complete snapshot of a Zellij session.
+///
+/// This is the top-level structure stored in Redis for restoration.
+/// Redis key format: `perth:snapshots:{session}:{name}`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionSnapshot {
+    /// Snapshot schema version for forward compatibility
+    pub schema_version: String,
+    /// Unique identifier for this snapshot
+    pub id: Uuid,
+    /// Human-readable name for this snapshot
+    pub name: String,
+    /// Session name this snapshot belongs to
+    pub session: String,
+    /// When snapshot was created
+    pub created_at: DateTime<Utc>,
+    /// Optional description or notes
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Parent snapshot ID for incremental snapshots
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<Uuid>,
+    /// Tabs in this session, ordered by index
+    pub tabs: Vec<TabSnapshot>,
+    /// Total pane count for quick reference
+    pub pane_count: usize,
+}
+
+impl SessionSnapshot {
+    /// Create a new session snapshot
+    pub fn new(name: impl Into<String>, session: impl Into<String>) -> Self {
+        Self {
+            schema_version: "1.0".to_string(),
+            id: Uuid::new_v4(),
+            name: name.into(),
+            session: session.into(),
+            created_at: Utc::now(),
+            description: None,
+            parent_id: None,
+            tabs: Vec::new(),
+            pane_count: 0,
+        }
+    }
+
+    /// Builder method to set description
+    pub fn with_description(mut self, desc: impl Into<String>) -> Self {
+        self.description = Some(desc.into());
+        self
+    }
+
+    /// Builder method to set parent for incremental snapshot
+    pub fn with_parent(mut self, parent_id: Uuid) -> Self {
+        self.parent_id = Some(parent_id);
+        self
+    }
+
+    /// Add a tab to the snapshot
+    pub fn add_tab(&mut self, tab: TabSnapshot) {
+        self.pane_count += tab.panes.len();
+        self.tabs.push(tab);
+    }
+
+    /// Get Redis key for this snapshot
+    pub fn redis_key(&self) -> String {
+        format!("perth:snapshots:{}:{}", self.session, self.name)
+    }
+}
+
+/// Warning level for restoration issues.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RestoreWarningLevel {
+    /// Informational, restoration succeeded
+    Info,
+    /// Minor issue, restoration partially succeeded
+    Warning,
+    /// Serious issue, part of restoration failed
+    Error,
+}
+
+/// Individual warning or issue encountered during restoration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestoreWarning {
+    /// Severity level
+    pub level: RestoreWarningLevel,
+    /// Human-readable message
+    pub message: String,
+    /// Component that had the issue (tab name, pane name, etc.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+    /// Suggested remediation if applicable
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<String>,
+}
+
+impl RestoreWarning {
+    /// Create an info-level warning
+    pub fn info(message: impl Into<String>) -> Self {
+        Self {
+            level: RestoreWarningLevel::Info,
+            message: message.into(),
+            component: None,
+            suggestion: None,
+        }
+    }
+
+    /// Create a warning-level warning
+    pub fn warning(message: impl Into<String>) -> Self {
+        Self {
+            level: RestoreWarningLevel::Warning,
+            message: message.into(),
+            component: None,
+            suggestion: None,
+        }
+    }
+
+    /// Create an error-level warning
+    pub fn error(message: impl Into<String>) -> Self {
+        Self {
+            level: RestoreWarningLevel::Error,
+            message: message.into(),
+            component: None,
+            suggestion: None,
+        }
+    }
+
+    /// Add component context
+    pub fn for_component(mut self, component: impl Into<String>) -> Self {
+        self.component = Some(component.into());
+        self
+    }
+
+    /// Add remediation suggestion
+    pub fn with_suggestion(mut self, suggestion: impl Into<String>) -> Self {
+        self.suggestion = Some(suggestion.into());
+        self
+    }
+}
+
+/// Overall restoration status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RestoreStatus {
+    /// All components restored successfully
+    Success,
+    /// Restored with some warnings
+    Partial,
+    /// Restoration failed
+    Failed,
+}
+
+/// Result of a restoration attempt.
+///
+/// Provides detailed feedback about what was restored and any issues.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestoreReport {
+    /// Overall status
+    pub status: RestoreStatus,
+    /// Snapshot that was restored
+    pub snapshot_name: String,
+    /// Session that was restored to
+    pub session: String,
+    /// Number of tabs restored
+    pub tabs_restored: usize,
+    /// Number of panes restored
+    pub panes_restored: usize,
+    /// Number of tabs that failed to restore
+    pub tabs_failed: usize,
+    /// Number of panes that failed to restore
+    pub panes_failed: usize,
+    /// When restoration was performed
+    pub restored_at: DateTime<Utc>,
+    /// Duration of restoration in milliseconds
+    pub duration_ms: u64,
+    /// Warnings and issues encountered
+    #[serde(default)]
+    pub warnings: Vec<RestoreWarning>,
+}
+
+impl RestoreReport {
+    /// Create a new restore report
+    pub fn new(snapshot_name: impl Into<String>, session: impl Into<String>) -> Self {
+        Self {
+            status: RestoreStatus::Success,
+            snapshot_name: snapshot_name.into(),
+            session: session.into(),
+            tabs_restored: 0,
+            panes_restored: 0,
+            tabs_failed: 0,
+            panes_failed: 0,
+            restored_at: Utc::now(),
+            duration_ms: 0,
+            warnings: Vec::new(),
+        }
+    }
+
+    /// Add a warning to the report
+    pub fn add_warning(&mut self, warning: RestoreWarning) {
+        // Update status based on warning level
+        match warning.level {
+            RestoreWarningLevel::Error => {
+                self.status = RestoreStatus::Failed;
+            }
+            RestoreWarningLevel::Warning if self.status == RestoreStatus::Success => {
+                self.status = RestoreStatus::Partial;
+            }
+            _ => {}
+        }
+        self.warnings.push(warning);
+    }
+
+    /// Check if restoration was fully successful
+    pub fn is_success(&self) -> bool {
+        self.status == RestoreStatus::Success
+    }
+
+    /// Get count of errors
+    pub fn error_count(&self) -> usize {
+        self.warnings
+            .iter()
+            .filter(|w| w.level == RestoreWarningLevel::Error)
+            .count()
+    }
+}
+
+// ============================================================================
 // Unit Tests
 // ============================================================================
 
@@ -511,5 +789,148 @@ mod tests {
 
         assert_eq!(deserialized.meta.get("project"), Some(&"perth".to_string()));
         assert_eq!(deserialized.meta.get("priority"), Some(&"high".to_string()));
+    }
+
+    // ========================================================================
+    // Session Restoration Tests (STORY-040)
+    // ========================================================================
+
+    #[test]
+    fn test_session_snapshot_serialization_roundtrip() {
+        let mut snapshot = SessionSnapshot::new("pre-refactor", "main")
+            .with_description("Snapshot before major refactor");
+
+        // Add a tab with panes
+        let pane1 = PaneSnapshot {
+            name: "editor".to_string(),
+            position: 0,
+            cwd: Some("/home/user/project".to_string()),
+            command: Some("nvim".to_string()),
+            pane_id: Some("1".to_string()),
+            focused: true,
+            meta: HashMap::new(),
+        };
+
+        let pane2 = PaneSnapshot {
+            name: "terminal".to_string(),
+            position: 1,
+            cwd: Some("/home/user/project".to_string()),
+            command: None,
+            pane_id: Some("2".to_string()),
+            focused: false,
+            meta: HashMap::new(),
+        };
+
+        let tab = TabSnapshot {
+            name: "myapp(dev)".to_string(),
+            index: 0,
+            active: true,
+            layout: "vertical".to_string(),
+            panes: vec![pane1, pane2],
+            correlation_id: Some("pr-42".to_string()),
+        };
+
+        snapshot.add_tab(tab);
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&snapshot).expect("Failed to serialize SessionSnapshot");
+
+        // Deserialize back
+        let deserialized: SessionSnapshot =
+            serde_json::from_str(&json).expect("Failed to deserialize SessionSnapshot");
+
+        // Verify fields
+        assert_eq!(snapshot.id, deserialized.id);
+        assert_eq!(snapshot.name, deserialized.name);
+        assert_eq!(snapshot.session, deserialized.session);
+        assert_eq!(snapshot.schema_version, "1.0");
+        assert_eq!(deserialized.description, Some("Snapshot before major refactor".to_string()));
+        assert_eq!(deserialized.tabs.len(), 1);
+        assert_eq!(deserialized.pane_count, 2);
+        assert_eq!(deserialized.tabs[0].panes.len(), 2);
+        assert_eq!(deserialized.tabs[0].correlation_id, Some("pr-42".to_string()));
+    }
+
+    #[test]
+    fn test_session_snapshot_redis_key() {
+        let snapshot = SessionSnapshot::new("backup-v1", "my-session");
+        assert_eq!(snapshot.redis_key(), "perth:snapshots:my-session:backup-v1");
+    }
+
+    #[test]
+    fn test_restore_warning_builder() {
+        let warning = RestoreWarning::warning("Pane cwd no longer exists")
+            .for_component("editor")
+            .with_suggestion("Will use current directory instead");
+
+        assert_eq!(warning.level, RestoreWarningLevel::Warning);
+        assert_eq!(warning.message, "Pane cwd no longer exists");
+        assert_eq!(warning.component, Some("editor".to_string()));
+        assert_eq!(warning.suggestion, Some("Will use current directory instead".to_string()));
+    }
+
+    #[test]
+    fn test_restore_report_status_updates() {
+        let mut report = RestoreReport::new("test-snapshot", "main");
+        assert_eq!(report.status, RestoreStatus::Success);
+        assert!(report.is_success());
+
+        // Add info warning - should stay Success
+        report.add_warning(RestoreWarning::info("Tab restored"));
+        assert_eq!(report.status, RestoreStatus::Success);
+
+        // Add warning - should become Partial
+        report.add_warning(RestoreWarning::warning("Pane position adjusted"));
+        assert_eq!(report.status, RestoreStatus::Partial);
+
+        // Add error - should become Failed
+        report.add_warning(RestoreWarning::error("Failed to restore pane"));
+        assert_eq!(report.status, RestoreStatus::Failed);
+        assert!(!report.is_success());
+        assert_eq!(report.error_count(), 1);
+    }
+
+    #[test]
+    fn test_restore_report_serialization() {
+        let mut report = RestoreReport::new("snapshot-1", "dev-session");
+        report.tabs_restored = 2;
+        report.panes_restored = 5;
+        report.add_warning(RestoreWarning::warning("Minor issue").for_component("pane-3"));
+
+        let json = serde_json::to_string(&report).expect("Failed to serialize");
+        let deserialized: RestoreReport = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(deserialized.snapshot_name, "snapshot-1");
+        assert_eq!(deserialized.session, "dev-session");
+        assert_eq!(deserialized.tabs_restored, 2);
+        assert_eq!(deserialized.panes_restored, 5);
+        assert_eq!(deserialized.warnings.len(), 1);
+        assert_eq!(deserialized.status, RestoreStatus::Partial);
+    }
+
+    #[test]
+    fn test_pane_snapshot_optional_fields() {
+        // Minimal pane snapshot
+        let pane = PaneSnapshot {
+            name: "minimal".to_string(),
+            position: 0,
+            cwd: None,
+            command: None,
+            pane_id: None,
+            focused: false,
+            meta: HashMap::new(),
+        };
+
+        let json = serde_json::to_string(&pane).expect("Failed to serialize");
+
+        // Optional fields should be omitted
+        assert!(!json.contains("cwd"));
+        assert!(!json.contains("command"));
+        assert!(!json.contains("pane_id"));
+
+        // Deserialize and verify
+        let deserialized: PaneSnapshot = serde_json::from_str(&json).expect("Failed to deserialize");
+        assert_eq!(deserialized.name, "minimal");
+        assert!(deserialized.cwd.is_none());
     }
 }
