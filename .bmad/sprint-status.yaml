@@ -1,8 +1,9 @@
 version: "6.0.0"
 project_name: "Perth"
 project_level: 3
-current_sprint: 4
+current_sprint: 5
 sprint_plan_path: "docs/sprint-plan-perth-2026-01-05.md"
+sprint_5_revision: "docs/sprint-5-revised.md"
 
 sprints:
   - sprint_number: 1
@@ -236,6 +237,104 @@ sprints:
         status: "completed"
         priority: "should_have"
         epic: "EPIC-003"
+
+  - sprint_number: 5
+    start_date: "2026-03-03"
+    end_date: "2026-03-14"
+    capacity_points: 30
+    committed_points: 24
+    completed_points: 5
+    status: "in_progress"
+    goal: "Enable Claude-driven parallel workflow orchestration"
+    stories:
+      - story_id: "STORY-036"
+        title: "Tab Create with Correlation ID"
+        points: 3
+        status: "completed"
+        priority: "should_have"
+        epic: "EPIC-004"
+      - story_id: "STORY-037"
+        title: "Batch Pane Spawning"
+        points: 5
+        status: "pending"
+        priority: "should_have"
+        epic: "EPIC-004"
+      - story_id: "STORY-038"
+        title: "Claude Skill Documentation"
+        points: 2
+        status: "completed"
+        priority: "should_have"
+        epic: "EPIC-004"
+      - story_id: "STORY-039"
+        title: "Tab Naming Conventions"
+        points: 2
+        status: "pending"
+        priority: "could_have"
+        epic: "EPIC-004"
+      - story_id: "STORY-025"
+        title: "Bloodbank Event Publisher"
+        points: 5
+        status: "pending"
+        priority: "should_have"
+        epic: "EPIC-004"
+      - story_id: "STORY-026"
+        title: "Bloodbank Config"
+        points: 2
+        status: "pending"
+        priority: "should_have"
+        epic: "EPIC-004"
+      - story_id: "STORY-027"
+        title: "History Type Filter"
+        points: 2
+        status: "pending"
+        priority: "should_have"
+        epic: "EPIC-004"
+      - story_id: "STORY-040"
+        title: "Restoration Data Model & Redis Schema"
+        points: 3
+        status: "pending"
+        priority: "should_have"
+        epic: "EPIC-006"
+
+  - sprint_number: 6
+    start_date: "2026-03-17"
+    end_date: "2026-03-28"
+    capacity_points: 30
+    committed_points: 21
+    completed_points: 0
+    status: "planned"
+    goal: "Complete Session Restoration feature (v2.1)"
+    stories:
+      - story_id: "STORY-041"
+        title: "State Capture Module"
+        points: 5
+        status: "pending"
+        priority: "should_have"
+        epic: "EPIC-006"
+      - story_id: "STORY-042"
+        title: "Snapshot Create & List Commands"
+        points: 5
+        status: "pending"
+        priority: "should_have"
+        epic: "EPIC-006"
+      - story_id: "STORY-043"
+        title: "Restore Command"
+        points: 5
+        status: "pending"
+        priority: "should_have"
+        epic: "EPIC-006"
+      - story_id: "STORY-044"
+        title: "Incremental Snapshot Support"
+        points: 3
+        status: "pending"
+        priority: "should_have"
+        epic: "EPIC-006"
+      - story_id: "STORY-045"
+        title: "Snapshot Daemon"
+        points: 3
+        status: "pending"
+        priority: "could_have"
+        epic: "EPIC-006"
 
 velocity:
   sprint_1: 28
