@@ -97,8 +97,13 @@ async fn run() -> Result<()> {
                         }
                         return Ok(());
                     }
-                    PaneAction::History { name, last, format } => {
-                        let history = orchestrator.get_history(&name, last).await?;
+                    PaneAction::History { name, last, entry_type, format } => {
+                        let mut history = orchestrator.get_history(&name, last).await?;
+
+                        // Apply type filter if specified (client-side filtering)
+                        if let Some(filter_type) = entry_type {
+                            history.retain(|entry| entry.entry_type == filter_type);
+                        }
 
                         match format {
                             OutputFormat::Json => {

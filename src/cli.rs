@@ -355,6 +355,14 @@ RELATED COMMANDS:
               help = "Show only the last N entries (default: all, up to 100)")]
         last: Option<usize>,
 
+        /// Filter by entry type
+        ///
+        /// Show only entries of a specific type (milestone, checkpoint, exploration).
+        /// Useful for agents to focus on major progress points.
+        #[arg(short = 't', long = "type", value_enum,
+              help = "Filter by entry type: milestone, checkpoint, or exploration")]
+        entry_type: Option<crate::types::IntentType>,
+
         /// Choose the output format
         ///
         /// Use 'text' for reading, 'json' for tooling, 'context' for agents.
