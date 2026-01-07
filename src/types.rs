@@ -137,6 +137,78 @@ impl IntentEntry {
 }
 
 // ============================================================================
+// Tab Tracking Types (Perth v2.0 - STORY-036)
+// ============================================================================
+
+/// Record for tracking tab metadata with correlation ID support.
+///
+/// Enables traceability for agentic workflows by associating tabs with
+/// correlation IDs from triggering events (e.g., Bloodbank events).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TabRecord {
+    /// Tab name (may include correlation ID suffix)
+    pub tab_name: String,
+    /// Session this tab belongs to
+    pub session: String,
+    /// Optional correlation ID for event traceability
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
+    /// When this tab was created
+    pub created_at: String,
+    /// Last time this tab was accessed
+    pub last_accessed: String,
+    /// Additional metadata key-value pairs
+    #[serde(default)]
+    pub meta: HashMap<String, String>,
+}
+
+impl TabRecord {
+    /// Create a new TabRecord with the given name and session.
+    pub fn new(tab_name: String, session: String, now: String) -> Self {
+        Self {
+            tab_name,
+            session,
+            correlation_id: None,
+            created_at: now.clone(),
+            last_accessed: now,
+            meta: HashMap::new(),
+        }
+    }
+
+    /// Builder method to set correlation ID
+    pub fn with_correlation_id(mut self, correlation_id: impl Into<String>) -> Self {
+        self.correlation_id = Some(correlation_id.into());
+        self
+    }
+
+    /// Builder method to set metadata
+    pub fn with_meta(mut self, meta: HashMap<String, String>) -> Self {
+        self.meta = meta;
+        self
+    }
+
+    /// Get the effective tab name (with correlation ID suffix if present)
+    pub fn effective_name(&self) -> String {
+        match &self.correlation_id {
+            Some(id) => format!("{}-{}", self.tab_name, id),
+            None => self.tab_name.clone(),
+        }
+    }
+}
+
+/// Output structure for tab information in list/info commands
+#[derive(Debug, Clone, Serialize)]
+pub struct TabInfoOutput {
+    pub tab_name: String,
+    pub session: String,
+    pub correlation_id: Option<String>,
+    pub created_at: String,
+    pub last_accessed: String,
+    pub meta: HashMap<String, String>,
+    pub pane_count: usize,
+}
+
+// ============================================================================
 // Pane Tracking Types (Perth v1.0 - Legacy)
 // ============================================================================
 
@@ -342,5 +414,93 @@ mod tests {
         assert_eq!(entry.source, IntentSource::Automated);
         assert_eq!(entry.goal_delta, Some("Completed implementation".to_string()));
         assert_eq!(entry.commands_run, Some(10));
+    }
+
+    // ========================================================================
+    // TabRecord Tests (STORY-036)
+    // ========================================================================
+
+    #[test]
+    fn test_tab_record_serialization_roundtrip() {
+        let tab = TabRecord::new(
+            "myapp(fixes)".to_string(),
+            "main".to_string(),
+            "2026-01-07T12:00:00Z".to_string(),
+        )
+        .with_correlation_id("pr-42");
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&tab).expect("Failed to serialize TabRecord");
+
+        // Deserialize back
+        let deserialized: TabRecord =
+            serde_json::from_str(&json).expect("Failed to deserialize TabRecord");
+
+        // Verify all fields match
+        assert_eq!(tab.tab_name, deserialized.tab_name);
+        assert_eq!(tab.session, deserialized.session);
+        assert_eq!(tab.correlation_id, deserialized.correlation_id);
+        assert_eq!(tab.created_at, deserialized.created_at);
+        assert_eq!(tab.last_accessed, deserialized.last_accessed);
+    }
+
+    #[test]
+    fn test_tab_record_without_correlation_id() {
+        let tab = TabRecord::new(
+            "simple-tab".to_string(),
+            "main".to_string(),
+            "2026-01-07T12:00:00Z".to_string(),
+        );
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&tab).expect("Failed to serialize");
+
+        // correlation_id should be omitted when None (skip_serializing_if)
+        assert!(!json.contains("correlation_id"));
+
+        // Deserialize back
+        let deserialized: TabRecord = serde_json::from_str(&json).expect("Failed to deserialize");
+        assert!(deserialized.correlation_id.is_none());
+    }
+
+    #[test]
+    fn test_tab_record_effective_name() {
+        // Without correlation ID
+        let tab1 = TabRecord::new(
+            "myapp(fixes)".to_string(),
+            "main".to_string(),
+            "2026-01-07T12:00:00Z".to_string(),
+        );
+        assert_eq!(tab1.effective_name(), "myapp(fixes)");
+
+        // With correlation ID
+        let tab2 = TabRecord::new(
+            "myapp(fixes)".to_string(),
+            "main".to_string(),
+            "2026-01-07T12:00:00Z".to_string(),
+        )
+        .with_correlation_id("pr-42");
+        assert_eq!(tab2.effective_name(), "myapp(fixes)-pr-42");
+    }
+
+    #[test]
+    fn test_tab_record_with_meta() {
+        let mut meta = HashMap::new();
+        meta.insert("project".to_string(), "perth".to_string());
+        meta.insert("priority".to_string(), "high".to_string());
+
+        let tab = TabRecord::new(
+            "myapp(fixes)".to_string(),
+            "main".to_string(),
+            "2026-01-07T12:00:00Z".to_string(),
+        )
+        .with_correlation_id("abc123")
+        .with_meta(meta);
+
+        let json = serde_json::to_string(&tab).expect("Failed to serialize");
+        let deserialized: TabRecord = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(deserialized.meta.get("project"), Some(&"perth".to_string()));
+        assert_eq!(deserialized.meta.get("priority"), Some(&"high".to_string()));
     }
 }

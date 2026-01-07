@@ -11,7 +11,7 @@ mod zellij;
 
 use anyhow::{anyhow, Result};
 use clap::{CommandFactory, FromArgMatches};
-use cli::{collect_meta, command_name, Cli, Command, ConfigAction, OutputFormat, PaneAction};
+use cli::{collect_meta, command_name, Cli, Command, ConfigAction, OutputFormat, PaneAction, TabAction};
 use config::Config;
 use orchestrator::Orchestrator;
 use output::OutputFormatter;
@@ -163,7 +163,46 @@ async fn run() -> Result<()> {
                 .await?;
         }
         Command::Tab(args) => {
-            orchestrator.ensure_tab(&args.name).await?;
+            match args.action {
+                Some(TabAction::Create { name, correlation_id, meta }) => {
+                    let meta_map = collect_meta(meta);
+                    let result = orchestrator.create_tab(name, correlation_id, meta_map).await?;
+
+                    if result.created {
+                        print!("Created tab '{}'", result.tab_name);
+                    } else {
+                        print!("Focused existing tab '{}'", result.tab_name);
+                    }
+
+                    if let Some(ref id) = result.correlation_id {
+                        print!(" (correlation: {})", id);
+                    }
+
+                    println!(" in session '{}'", result.session);
+                }
+                Some(TabAction::Info { name }) => {
+                    match orchestrator.tab_info(&name).await? {
+                        Some(tab) => {
+                            let json = serde_json::to_string_pretty(&tab)?;
+                            println!("{}", json);
+                        }
+                        None => {
+                            eprintln!("Tab '{}' not found in Redis", name);
+                            std::process::exit(2);
+                        }
+                    }
+                }
+                None => {
+                    // Backwards compatibility: just ensure the tab exists
+                    let tab_name = args.name.ok_or_else(|| anyhow!("tab name is required"))?;
+                    let created = orchestrator.ensure_tab(&tab_name).await?;
+                    if created {
+                        println!("Created tab '{}'", tab_name);
+                    } else {
+                        println!("Focused tab '{}'", tab_name);
+                    }
+                }
+            }
         }
         Command::Reconcile => {
             orchestrator.reconcile().await?;
@@ -282,7 +321,14 @@ fn needs_zellij_check(command: &Command) -> bool {
                 None => true, // Opening a pane requires Zellij
             }
         }
-        Command::Tab(_) => true,
+        Command::Tab(args) => {
+            // Tab info only uses Redis
+            match &args.action {
+                Some(TabAction::Info { .. }) => false,
+                Some(TabAction::Create { .. }) => true, // Creating requires Zellij
+                None => true, // Ensuring tab exists requires Zellij
+            }
+        }
         Command::Reconcile => true,
         Command::List => true,
         // These commands only use Redis or local config

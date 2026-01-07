@@ -1,4 +1,4 @@
-use crate::types::{IntentEntry, PaneRecord};
+use crate::types::{IntentEntry, PaneRecord, TabRecord};
 use anyhow::{Context, Result};
 use chrono::Utc;
 use redis::aio::MultiplexedConnection;
@@ -218,6 +218,107 @@ impl StateManager {
     }
 
     // ========================================================================
+    // Tab Storage Methods (STORY-036)
+    // ========================================================================
+
+    /// Get a tab record by name.
+    pub async fn get_tab(&mut self, tab_name: &str, session: &str) -> Result<Option<TabRecord>> {
+        let key = tab_key(tab_name, session);
+        let map: HashMap<String, String> = self.conn.hgetall(&key).await?;
+        if map.is_empty() {
+            return Ok(None);
+        }
+
+        let mut meta = HashMap::new();
+        let mut correlation_id = None;
+        let mut created_at = String::new();
+        let mut last_accessed = String::new();
+
+        for (k, v) in map {
+            if let Some(meta_key) = k.strip_prefix(META_PREFIX) {
+                meta.insert(meta_key.to_string(), v);
+                continue;
+            }
+            match k.as_str() {
+                "correlation_id" => correlation_id = Some(v),
+                "created_at" => created_at = v,
+                "last_accessed" => last_accessed = v,
+                _ => {}
+            }
+        }
+
+        Ok(Some(TabRecord {
+            tab_name: tab_name.to_string(),
+            session: session.to_string(),
+            correlation_id,
+            created_at,
+            last_accessed,
+            meta,
+        }))
+    }
+
+    /// Create or update a tab record.
+    pub async fn upsert_tab(&mut self, record: &TabRecord) -> Result<()> {
+        let key = tab_key(&record.tab_name, &record.session);
+        let mut fields: Vec<(String, String)> = Vec::new();
+
+        fields.push(("created_at".to_string(), record.created_at.clone()));
+        fields.push(("last_accessed".to_string(), record.last_accessed.clone()));
+
+        if let Some(correlation_id) = &record.correlation_id {
+            fields.push(("correlation_id".to_string(), correlation_id.clone()));
+        }
+
+        for (k, v) in &record.meta {
+            fields.push((format!("{}{}", META_PREFIX, k), v.clone()));
+        }
+
+        let _: () = self.conn.hset_multiple(key, &fields).await?;
+        Ok(())
+    }
+
+    /// Touch a tab (update last_accessed timestamp).
+    pub async fn touch_tab(&mut self, tab_name: &str, session: &str) -> Result<()> {
+        let key = tab_key(tab_name, session);
+        let now = Self::now_string();
+        let _: () = self.conn.hset(&key, "last_accessed", now).await?;
+        Ok(())
+    }
+
+    /// List all tab names for a session.
+    pub async fn list_tab_names(&mut self, session: &str) -> Result<Vec<String>> {
+        let pattern = format!("perth:tab:{}:*", session);
+        let mut iter: AsyncIter<String> = self.conn.scan_match(&pattern).await?;
+        let mut names = Vec::new();
+        let prefix = format!("perth:tab:{}:", session);
+        while let Some(key) = iter.next_item().await {
+            if let Some(name) = key.strip_prefix(&prefix) {
+                names.push(name.to_string());
+            }
+        }
+        Ok(names)
+    }
+
+    /// List all tabs for a session.
+    pub async fn list_tabs(&mut self, session: &str) -> Result<Vec<TabRecord>> {
+        let names = self.list_tab_names(session).await?;
+        let mut tabs = Vec::new();
+        for name in names {
+            if let Some(tab) = self.get_tab(&name, session).await? {
+                tabs.push(tab);
+            }
+        }
+        Ok(tabs)
+    }
+
+    /// Check if a tab exists.
+    pub async fn tab_exists(&mut self, tab_name: &str, session: &str) -> Result<bool> {
+        let key = tab_key(tab_name, session);
+        let exists: bool = self.conn.exists(&key).await?;
+        Ok(exists)
+    }
+
+    // ========================================================================
     // Migration Methods (v1.0 → v2.0)
     // ========================================================================
 
@@ -304,4 +405,8 @@ fn pane_key(pane_name: &str) -> String {
 
 fn history_key(pane_name: &str) -> String {
     format!("perth:pane:{}:history", pane_name)
+}
+
+fn tab_key(tab_name: &str, session: &str) -> String {
+    format!("perth:tab:{}:{}", session, tab_name)
 }

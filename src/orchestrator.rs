@@ -1,7 +1,7 @@
 use crate::context::ContextCollector;
 use crate::llm::{create_provider, CircuitBreaker, LLMConfig};
 use crate::state::{MigrationResult, StateManager};
-use crate::types::{IntentEntry, IntentSource, IntentType, PaneInfoOutput, PaneRecord, PaneStatus};
+use crate::types::{IntentEntry, IntentSource, IntentType, PaneInfoOutput, PaneRecord, PaneStatus, TabRecord};
 use crate::zellij::ZellijDriver;
 use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
@@ -78,6 +78,83 @@ impl Orchestrator {
                 .context("failed to create tab")?;
             Ok(true)
         }
+    }
+
+    /// Create a new tab with optional correlation ID for event traceability.
+    ///
+    /// The correlation ID is appended to the tab name as a suffix (e.g., "myapp(fixes)-pr-42")
+    /// and stored in Redis for later querying.
+    ///
+    /// Returns a TabCreateResult indicating whether the tab was created or already exists.
+    pub async fn create_tab(
+        &mut self,
+        tab_name: String,
+        correlation_id: Option<String>,
+        meta: HashMap<String, String>,
+    ) -> Result<TabCreateResult> {
+        // Determine the target session
+        let target_session = self
+            .zellij
+            .active_session_name()
+            .ok_or_else(|| anyhow!("no active session; must be inside a Zellij session"))?;
+
+        // Compute the effective tab name (with correlation ID suffix if provided)
+        let effective_name = match &correlation_id {
+            Some(id) => format!("{}-{}", tab_name, id),
+            None => tab_name.clone(),
+        };
+
+        // Check if tab already exists in Zellij
+        let tabs = self.zellij.query_tab_names(None).await?;
+        if tabs.iter().any(|tab| tab == &effective_name) {
+            // Tab already exists - touch it and focus
+            self.zellij.go_to_tab_name(None, &effective_name).await?;
+            self.state.touch_tab(&effective_name, &target_session).await?;
+
+            return Ok(TabCreateResult {
+                tab_name: effective_name,
+                correlation_id,
+                created: false,
+                session: target_session,
+            });
+        }
+
+        // Create the tab in Zellij
+        self.zellij
+            .new_tab(None, &effective_name)
+            .await
+            .context("failed to create tab in Zellij")?;
+
+        // Store in Redis
+        let now = StateManager::now_string();
+        let mut record = TabRecord::new(effective_name.clone(), target_session.clone(), now);
+
+        if let Some(id) = &correlation_id {
+            record = record.with_correlation_id(id);
+        }
+
+        if !meta.is_empty() {
+            record = record.with_meta(meta);
+        }
+
+        self.state.upsert_tab(&record).await?;
+
+        Ok(TabCreateResult {
+            tab_name: effective_name,
+            correlation_id,
+            created: true,
+            session: target_session,
+        })
+    }
+
+    /// Get info about a tab by name.
+    pub async fn tab_info(&mut self, tab_name: &str) -> Result<Option<TabRecord>> {
+        let session = self
+            .zellij
+            .active_session_name()
+            .ok_or_else(|| anyhow!("no active session; must be inside a Zellij session"))?;
+
+        self.state.get_tab(tab_name, &session).await
     }
 
     pub async fn reconcile(&mut self) -> Result<()> {
@@ -530,13 +607,24 @@ impl Orchestrator {
                 let is_last_tab = tab_idx == tab_names.len() - 1;
                 let panes_in_tab = tabs.get(tab_name).unwrap();
 
-                // Print tab
+                // Look up tab in Redis to get correlation ID
+                let correlation_id = self.state.get_tab(tab_name, session_name).await
+                    .ok()
+                    .flatten()
+                    .and_then(|tab| tab.correlation_id);
+
+                // Print tab with correlation ID if present
                 let tab_prefix = if is_last_session && is_last_tab {
                     "└──"
                 } else {
                     "├──"
                 };
-                println!("{} {}", tab_prefix, tab_name);
+
+                let tab_display = match correlation_id {
+                    Some(ref id) => format!("{} [{}]", tab_name, id),
+                    None => tab_name.to_string(),
+                };
+                println!("{} {}", tab_prefix, tab_display);
 
                 // Sort panes by name for consistent output
                 let mut sorted_panes = panes_in_tab.clone();
@@ -690,4 +778,17 @@ pub struct SnapshotResult {
     pub key_files: Vec<String>,
     /// Tokens used (for cost tracking)
     pub tokens_used: Option<u32>,
+}
+
+/// Result of a tab create operation (STORY-036)
+#[derive(Debug, Clone)]
+pub struct TabCreateResult {
+    /// The effective tab name (may include correlation ID suffix)
+    pub tab_name: String,
+    /// The correlation ID if one was provided
+    pub correlation_id: Option<String>,
+    /// Whether the tab was newly created (false if already existed)
+    pub created: bool,
+    /// The session the tab belongs to
+    pub session: String,
 }

@@ -304,7 +304,62 @@ RELATED COMMANDS:
 
 #[derive(Args)]
 pub struct TabArgs {
-    pub name: String,
+    #[command(subcommand)]
+    pub action: Option<TabAction>,
+    /// Tab name (used when no subcommand provided, for backwards compatibility)
+    pub name: Option<String>,
+}
+
+#[derive(Subcommand)]
+pub enum TabAction {
+    /// Create a new tab with optional correlation ID for event traceability
+    ///
+    /// Creates a named tab in Zellij with optional correlation ID suffix.
+    /// The correlation ID enables tracing work back to triggering events.
+    #[command(
+        after_help = "EXAMPLES:
+    # Create a simple tab
+    znav tab create myapp
+
+    # Create tab with correlation ID for PR tracking
+    znav tab create \"myapp(fixes)\" --correlation-id pr-42
+    # Creates tab named \"myapp(fixes)-pr-42\"
+
+    # Create tab with metadata
+    znav tab create debug-session --correlation-id issue-123 --meta project=perth
+
+CORRELATION IDS:
+    Correlation IDs link tabs to events from external systems like Bloodbank.
+    This enables end-to-end traceability in agentic workflows.
+
+RELATED COMMANDS:
+    znav list               View all tabs with correlation IDs
+    znav pane batch         Create multiple panes in a tab"
+    )]
+    Create {
+        /// Name for the new tab
+        #[arg(help = "Tab name (e.g., 'myapp(fixes)')")]
+        name: String,
+
+        /// Correlation ID for event traceability
+        ///
+        /// Links this tab to a triggering event (e.g., Bloodbank event, PR number).
+        /// Tab will be created with name format: {name}-{correlation_id}
+        #[arg(short = 'c', long = "correlation-id",
+              help = "Correlation ID for tracing (e.g., 'pr-42', 'issue-123')")]
+        correlation_id: Option<String>,
+
+        /// Additional metadata key=value pairs
+        #[arg(long = "meta", value_parser = parse_key_val,
+              help = "Metadata as key=value pairs")]
+        meta: Vec<(String, String)>,
+    },
+
+    /// Get info about a tab
+    Info {
+        /// Tab name to get info for
+        name: String,
+    },
 }
 
 pub fn command_name() -> String {
