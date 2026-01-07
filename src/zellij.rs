@@ -111,6 +111,24 @@ impl ZellijDriver {
         Ok(())
     }
 
+    /// Create a new pane with vertical split (side by side)
+    pub async fn new_pane_vertical(&self, session: Option<&str>) -> Result<()> {
+        self.action(session, &["new-pane", "--direction", "right"]).await?;
+        Ok(())
+    }
+
+    /// Create a new pane with horizontal split (stacked)
+    pub async fn new_pane_horizontal(&self, session: Option<&str>) -> Result<()> {
+        self.action(session, &["new-pane", "--direction", "down"]).await?;
+        Ok(())
+    }
+
+    /// Create a new pane with specified working directory
+    pub async fn new_pane_with_cwd(&self, session: Option<&str>, cwd: &str, direction: &str) -> Result<()> {
+        self.action(session, &["new-pane", "--direction", direction, "--cwd", cwd]).await?;
+        Ok(())
+    }
+
     pub async fn rename_pane(&self, session: Option<&str>, name: &str) -> Result<()> {
         self.action(session, &["rename-pane", name]).await?;
         Ok(())

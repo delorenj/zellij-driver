@@ -2,6 +2,16 @@ use crate::types::{IntentSource, IntentType};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::collections::HashMap;
 
+/// Split direction for pane creation
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum SplitDirection {
+    /// Vertical split (panes side by side)
+    #[default]
+    Vertical,
+    /// Horizontal split (panes stacked)
+    Horizontal,
+}
+
 /// Output format for commands
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
 pub enum OutputFormat {
@@ -157,6 +167,58 @@ pub struct PaneArgs {
 pub enum PaneAction {
     /// Get info about a pane
     Info { name: String },
+
+    /// Spawn multiple named panes in a single command
+    ///
+    /// Creates multiple panes in a tab for parallel work. Each pane is named
+    /// according to the list and registered in Redis with position metadata.
+    #[command(
+        after_help = "EXAMPLES:
+    # Create 3 panes in a tab
+    znav pane batch --tab \"myapp(fixes)\" --panes fix-auth,fix-errors,fix-docs
+
+    # Create with working directories
+    znav pane batch --tab \"myapp(fixes)\" \\
+        --panes fix-auth,fix-errors,fix-docs \\
+        --cwd ../fix-auth,../fix-errors,../fix-docs
+
+    # Use horizontal layout (stacked)
+    znav pane batch --tab \"myapp(fixes)\" --panes a,b,c --layout horizontal
+
+LAYOUT OPTIONS:
+    vertical     Panes arranged side by side (default)
+    horizontal   Panes stacked top to bottom
+
+NOTES:
+    - Creates panes sequentially in the specified tab
+    - If --cwd has fewer entries than --panes, remaining panes use current dir
+    - All panes are registered in Redis for tracking
+
+RELATED COMMANDS:
+    znav tab create         Create a tab first
+    znav pane log           Log intent for each pane
+    znav list               View all panes"
+    )]
+    Batch {
+        /// Tab to create panes in (required)
+        #[arg(short = 't', long, help = "Tab name to create panes in")]
+        tab: String,
+
+        /// Comma-separated list of pane names
+        #[arg(short = 'p', long, value_delimiter = ',',
+              help = "Pane names (e.g., 'fix-auth,fix-errors,fix-docs')")]
+        panes: Vec<String>,
+
+        /// Comma-separated list of working directories (optional)
+        #[arg(short = 'c', long, value_delimiter = ',',
+              help = "Working directories for each pane (e.g., '../dir1,../dir2')")]
+        cwd: Vec<String>,
+
+        /// Split layout direction
+        #[arg(short = 'l', long, default_value = "vertical", value_enum,
+              help = "Pane layout: vertical (side by side) or horizontal (stacked)")]
+        layout: SplitDirection,
+    },
 
     /// Auto-generate an intent summary from recent work using LLM
     ///

@@ -152,6 +152,33 @@ async fn run() -> Result<()> {
 
                         return Ok(());
                     }
+                    PaneAction::Batch { tab, panes, cwd, layout } => {
+                        let vertical = matches!(layout, cli::SplitDirection::Vertical);
+                        let result = orchestrator.batch_panes(tab, panes, cwd, vertical).await?;
+
+                        println!("Created {} pane{} in tab '{}' (session '{}')",
+                            result.panes_created.len(),
+                            if result.panes_created.len() == 1 { "" } else { "s" },
+                            result.tab_name,
+                            result.session
+                        );
+
+                        if !result.panes_created.is_empty() {
+                            println!("  Created:");
+                            for pane in &result.panes_created {
+                                println!("    - {}", pane);
+                            }
+                        }
+
+                        if !result.panes_skipped.is_empty() {
+                            println!("  Skipped (already exist):");
+                            for pane in &result.panes_skipped {
+                                println!("    - {}", pane);
+                            }
+                        }
+
+                        return Ok(());
+                    }
                 }
             }
 
@@ -318,6 +345,7 @@ fn needs_zellij_check(command: &Command) -> bool {
                 Some(PaneAction::History { .. }) => false,
                 Some(PaneAction::Snapshot { .. }) => false, // Uses Redis + LLM, not Zellij
                 Some(PaneAction::Info { .. }) => true, // Checks pane status via Zellij
+                Some(PaneAction::Batch { .. }) => true, // Creates panes in Zellij
                 None => true, // Opening a pane requires Zellij
             }
         }

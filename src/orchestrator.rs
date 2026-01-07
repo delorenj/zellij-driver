@@ -157,6 +157,108 @@ impl Orchestrator {
         self.state.get_tab(tab_name, &session).await
     }
 
+    /// Spawn multiple named panes in a single tab (STORY-037).
+    ///
+    /// Creates multiple panes sequentially in the specified tab, naming each one
+    /// according to the provided list. Each pane is registered in Redis with
+    /// position metadata for later focus restoration.
+    ///
+    /// # Arguments
+    /// * `tab_name` - The tab to create panes in (will be created if it doesn't exist)
+    /// * `pane_names` - Names for each pane to create
+    /// * `cwds` - Optional working directories for each pane (shorter list is padded with None)
+    /// * `vertical` - If true, creates vertical splits (side by side); if false, horizontal (stacked)
+    ///
+    /// # Returns
+    /// A `BatchResult` containing the list of created and skipped panes.
+    pub async fn batch_panes(
+        &mut self,
+        tab_name: String,
+        pane_names: Vec<String>,
+        cwds: Vec<String>,
+        vertical: bool,
+    ) -> Result<BatchResult> {
+        if pane_names.is_empty() {
+            return Err(anyhow!("at least one pane name is required"));
+        }
+
+        // Determine the target session
+        let target_session = self
+            .zellij
+            .active_session_name()
+            .ok_or_else(|| anyhow!("no active session; must be inside a Zellij session"))?;
+
+        // Ensure tab exists (creates it if needed)
+        let tab_created = self.ensure_tab_in_session(None, &tab_name).await?;
+
+        let mut panes_created = Vec::new();
+        let mut panes_skipped = Vec::new();
+
+        let direction = if vertical { "right" } else { "down" };
+
+        for (idx, pane_name) in pane_names.iter().enumerate() {
+            // Check if pane already exists in Redis
+            if self.state.get_pane(pane_name).await?.is_some() {
+                panes_skipped.push(pane_name.clone());
+                continue;
+            }
+
+            // Get cwd for this pane (if provided)
+            let cwd = cwds.get(idx).cloned();
+
+            if idx == 0 && tab_created {
+                // First pane in a newly created tab - just rename the initial pane
+                self.zellij.rename_pane(None, pane_name).await?;
+            } else {
+                // Create a new pane with split direction
+                if let Some(ref cwd_path) = cwd {
+                    // Resolve to absolute path
+                    let abs_cwd = std::fs::canonicalize(cwd_path)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| cwd_path.clone());
+                    self.zellij
+                        .new_pane_with_cwd(None, &abs_cwd, direction)
+                        .await?;
+                } else if vertical {
+                    self.zellij.new_pane_vertical(None).await?;
+                } else {
+                    self.zellij.new_pane_horizontal(None).await?;
+                }
+                self.zellij.rename_pane(None, pane_name).await?;
+            }
+
+            // Store pane in Redis with position metadata
+            let now = StateManager::now_string();
+            let mut meta = HashMap::new();
+            meta.insert("position".to_string(), idx.to_string());
+            if let Some(ref cwd_path) = cwd {
+                // Store resolved path in metadata
+                let abs_cwd = std::fs::canonicalize(cwd_path)
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| cwd_path.clone());
+                meta.insert("cwd".to_string(), abs_cwd);
+            }
+
+            let record = PaneRecord::new(
+                pane_name.clone(),
+                target_session.clone(),
+                tab_name.clone(),
+                now,
+                meta,
+            );
+            self.state.upsert_pane(&record).await?;
+
+            panes_created.push(pane_name.clone());
+        }
+
+        Ok(BatchResult {
+            tab_name,
+            panes_created,
+            panes_skipped,
+            session: target_session,
+        })
+    }
+
     pub async fn reconcile(&mut self) -> Result<()> {
         let current_session = self
             .zellij
@@ -790,5 +892,18 @@ pub struct TabCreateResult {
     /// Whether the tab was newly created (false if already existed)
     pub created: bool,
     /// The session the tab belongs to
+    pub session: String,
+}
+
+/// Result of a batch pane operation (STORY-037)
+#[derive(Debug, Clone)]
+pub struct BatchResult {
+    /// The tab name where panes were created
+    pub tab_name: String,
+    /// Names of panes that were created
+    pub panes_created: Vec<String>,
+    /// Names of panes that already existed (skipped)
+    pub panes_skipped: Vec<String>,
+    /// The session the panes belong to
     pub session: String,
 }
