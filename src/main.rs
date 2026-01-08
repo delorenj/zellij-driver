@@ -199,7 +199,27 @@ async fn run() -> Result<()> {
         }
         Command::Tab(args) => {
             match args.action {
-                Some(TabAction::Create { name, correlation_id, meta }) => {
+                Some(TabAction::Create { name, correlation_id, strict, meta }) => {
+                    // Validate tab naming convention (STORY-039)
+                    let name_valid = config.tab.validate_name(&name);
+                    if !name_valid {
+                        if strict {
+                            return Err(anyhow!(
+                                "Tab name '{}' does not match naming convention.\n\
+                                 Expected format: {}\n\
+                                 Use --strict=false to proceed anyway.",
+                                name,
+                                config.tab.format_hint()
+                            ));
+                        } else {
+                            eprintln!(
+                                "Warning: Tab name '{}' does not match naming convention.",
+                                name
+                            );
+                            eprintln!("  Expected format: {}", config.tab.format_hint());
+                        }
+                    }
+
                     let meta_map = collect_meta(meta);
                     let result = orchestrator.create_tab(name, correlation_id, meta_map).await?;
 
