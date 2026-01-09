@@ -474,6 +474,36 @@ impl StateManager {
 
         Ok(())
     }
+
+    /// Get snapshot ancestry chain (parent, grandparent, etc.)
+    ///
+    /// Returns snapshots from newest to oldest, stopping when parent_id is None
+    /// or when a parent cannot be found.
+    pub async fn get_snapshot_ancestry(&self, session: &str, name: &str) -> Result<Vec<crate::types::SessionSnapshot>> {
+        let mut ancestry = Vec::new();
+        let mut current = self.get_snapshot(session, name).await?;
+
+        ancestry.push(current.clone());
+
+        // Walk up the parent chain
+        while let Some(parent_id) = current.parent_id {
+            // Find parent by ID (need to scan all snapshots in session)
+            let snapshots = self.list_snapshots(session).await?;
+
+            match snapshots.into_iter().find(|s| s.id == parent_id) {
+                Some(parent) => {
+                    ancestry.push(parent.clone());
+                    current = parent;
+                }
+                None => {
+                    // Parent not found, stop traversal
+                    break;
+                }
+            }
+        }
+
+        Ok(ancestry)
+    }
 }
 
 /// Result of a keyspace migration operation.

@@ -863,6 +863,16 @@ impl Orchestrator {
         let restorer = SessionRestore::new(self.zellij.clone());
         restorer.restore_session(snapshot, dry_run).await
     }
+
+    /// Get snapshot ancestry chain
+    pub async fn get_snapshot_ancestry(&self, name: &str) -> Result<Vec<crate::types::SessionSnapshot>> {
+        let session = self
+            .zellij
+            .active_session_name()
+            .ok_or_else(|| anyhow!("not inside a zellij session"))?;
+
+        self.state.get_snapshot_ancestry(&session, name).await
+    }
 }
 
 fn collect_pane_names(value: &Value, panes: &mut HashSet<String>, in_pane_list: bool) {
