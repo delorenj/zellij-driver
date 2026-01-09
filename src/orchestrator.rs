@@ -851,6 +851,18 @@ impl Orchestrator {
 
         self.state.delete_snapshot(&session, name).await
     }
+
+    /// Restore a session from a snapshot
+    pub async fn restore_snapshot(
+        &self,
+        snapshot: &crate::types::SessionSnapshot,
+        dry_run: bool,
+    ) -> Result<crate::types::RestoreReport> {
+        use crate::restore::SessionRestore;
+
+        let restorer = SessionRestore::new(self.zellij.clone());
+        restorer.restore_session(snapshot, dry_run).await
+    }
 }
 
 fn collect_pane_names(value: &Value, panes: &mut HashSet<String>, in_pane_list: bool) {
