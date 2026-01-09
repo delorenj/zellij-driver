@@ -287,7 +287,7 @@ impl StateManager {
 
     /// List all tab names for a session.
     pub async fn list_tab_names(&mut self, session: &str) -> Result<Vec<String>> {
-        let pattern = format!("perth:tab:{}:*", session);
+        let pattern = format!("perth:tab:{}:*", escape_redis_pattern(session));
         let mut iter: AsyncIter<String> = self.conn.scan_match(&pattern).await?;
         let mut names = Vec::new();
         let prefix = format!("perth:tab:{}:", session);
@@ -402,7 +402,7 @@ impl StateManager {
 
     /// List snapshots for a specific session
     pub async fn list_snapshots(&self, session: &str) -> Result<Vec<crate::types::SessionSnapshot>> {
-        let pattern = format!("perth:snapshots:{}:*", session);
+        let pattern = format!("perth:snapshots:{}:*", escape_redis_pattern(session));
         let keys: Vec<String> = self.conn
             .clone()
             .keys(&pattern)
@@ -517,6 +517,20 @@ pub struct MigrationResult {
     pub skipped: Vec<String>,
     pub would_migrate: Vec<String>,
     pub errors: Vec<String>,
+}
+
+fn escape_redis_pattern(s: &str) -> String {
+    let mut escaped = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '*' | '?' | '[' | ']' | '\\' => {
+                escaped.push('\\');
+                escaped.push(c);
+            }
+            _ => escaped.push(c),
+        }
+    }
+    escaped
 }
 
 fn pane_key(pane_name: &str) -> String {
