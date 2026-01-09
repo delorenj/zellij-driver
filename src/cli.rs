@@ -541,6 +541,44 @@ REDIS SCHEMA:
         #[arg(help = "Name of the snapshot to delete")]
         name: String,
     },
+
+    /// Restore a session from a snapshot
+    ///
+    /// Recreates tabs and panes from a saved snapshot. Handles missing panes
+    /// gracefully and provides detailed restoration reports.
+    #[command(
+        after_help = "EXAMPLES:
+    # Restore from a snapshot
+    zdrive snapshot restore my-work
+
+    # Restore with detailed output
+    zdrive snapshot restore my-work --format json
+
+    # Dry run (show what would be restored)
+    zdrive snapshot restore my-work --dry-run
+
+BEHAVIOR:
+    - Creates missing tabs
+    - Creates panes with correct names and working directories
+    - Restores focus state
+    - Handles warnings for unnamed or failed panes
+    - Generates detailed restoration report"
+    )]
+    Restore {
+        /// Snapshot name
+        #[arg(help = "Name of the snapshot to restore")]
+        name: String,
+
+        /// Dry run (show what would be done without making changes)
+        #[arg(long,
+              help = "Dry run mode - show restoration plan without executing")]
+        dry_run: bool,
+
+        /// Output format
+        #[arg(short = 'f', long, default_value = "text", value_enum,
+              help = "Output format: text, json, or json-compact")]
+        format: OutputFormat,
+    },
 }
 
 pub fn command_name() -> String {

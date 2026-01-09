@@ -6,6 +6,7 @@ mod filter;
 mod llm;
 mod orchestrator;
 mod output;
+mod restore;
 mod snapshot;
 mod state;
 mod types;
@@ -455,6 +456,60 @@ async fn run() -> Result<()> {
                     orchestrator.delete_snapshot(&name).await?;
                     println!("Snapshot '{}' deleted.", name);
                 }
+                SnapshotAction::Restore { name, dry_run, format } => {
+                    // Load snapshot
+                    let snapshot = orchestrator.get_snapshot(&name).await?;
+
+                    // Perform restoration
+                    let report = orchestrator.restore_snapshot(&snapshot, dry_run).await?;
+
+                    // Format output
+                    match format {
+                        OutputFormat::Json => {
+                            println!("{}", serde_json::to_string_pretty(&report)?);
+                        }
+                        OutputFormat::JsonCompact => {
+                            println!("{}", serde_json::to_string(&report)?);
+                        }
+                        _ => {
+                            // Text format
+                            if dry_run {
+                                println!("=== DRY RUN (no changes made) ===\n");
+                            }
+
+                            println!("Restoration: {}", snapshot.name);
+                            println!("  Status: {:?}", report.status);
+                            println!("  Session: {}", report.session);
+                            println!("  Tabs restored: {}", report.tabs_restored);
+                            println!("  Tabs failed: {}", report.tabs_failed);
+                            println!("  Panes restored: {}", report.panes_restored);
+                            println!("  Panes failed: {}", report.panes_failed);
+                            println!("  Duration: {}ms", report.duration_ms);
+
+                            if !report.warnings.is_empty() {
+                                println!("\nWarnings ({}):", report.warnings.len());
+                                for warning in &report.warnings {
+                                    let level_str = format!("{:?}", warning.level).to_uppercase();
+                                    println!("  [{}] {}", level_str, warning.message);
+                                    if let Some(component) = &warning.component {
+                                        println!("      Component: {}", component);
+                                    }
+                                    if let Some(suggestion) = &warning.suggestion {
+                                        println!("      Suggestion: {}", suggestion);
+                                    }
+                                }
+                            }
+
+                            if report.status == crate::types::RestoreStatus::Success {
+                                println!("\n✓ Session successfully restored from snapshot");
+                            } else if report.status == crate::types::RestoreStatus::Partial {
+                                println!("\n⚠ Session partially restored (see warnings above)");
+                            } else {
+                                println!("\n✗ Session restoration failed (see errors above)");
+                            }
+                        }
+                    }
+                }
             }
         }
         Command::Migrate(args) => {
@@ -534,9 +589,9 @@ fn needs_zellij_check(command: &Command) -> bool {
         Command::Migrate(_) => false,
         Command::Config(_) => false,
         Command::Snapshot(args) => {
-            // Create requires Zellij session, others only use Redis
+            // Create and Restore require Zellij session, others only use Redis
             use cli::SnapshotAction;
-            matches!(args.action, SnapshotAction::Create { .. })
+            matches!(args.action, SnapshotAction::Create { .. } | SnapshotAction::Restore { .. })
         }
     }
 }
