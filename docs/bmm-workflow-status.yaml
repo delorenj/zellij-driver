@@ -2,7 +2,7 @@
 # BMAD Workflow Status for Perth
 project_name: Perth
 project_level: 3
-last_updated: 2026-01-05T21:30:00-05:00
+last_updated: 2026-01-09T00:00:00-05:00
 
 # Workflow completion status
 workflows:
@@ -17,11 +17,11 @@ current_phase: 4  # Implementation
 
 # Sprint status
 sprint_status:
-  current_sprint: 5  # Now in progress
+  current_sprint: 7  # Sprint 6 completed
   total_sprints_planned: 7
-  completed_sprints: 4
-  sprint_5_status: "planned - ready for implementation"
-  sprint_6_status: "planned - Session Restoration (v2.1)"
+  completed_sprints: 6
+  sprint_5_status: "completed"
+  sprint_6_status: "completed - Session Restoration (v2.1)"
 
   sprint_1:
     status: completed
@@ -47,14 +47,28 @@ sprint_status:
     points: 22/22
     goal: "Complete automated capture with alternative providers and user consent"
 
+  sprint_5:
+    status: completed
+    stories: 5/5
+    points: 12/12
+    goal: "Enable Claude-driven parallel workflow orchestration"
+
+  sprint_6:
+    status: completed
+    stories: 5/5
+    points: 21/21
+    goal: "Complete Session Restoration feature (v2.1)"
+
 # Velocity metrics
 velocity:
   sprint_1: 28
   sprint_2: 27
   sprint_3: 28
   sprint_4: 22
-  rolling_average: 26.25
-  total_delivered: 105
+  sprint_5: 12
+  sprint_6: 21
+  rolling_average: 23.0
+  total_delivered: 138
 
 # Requirements coverage
 requirements_coverage:
@@ -69,7 +83,7 @@ epics:
   EPIC-003_automated_context_capture: complete  # Sprint 3-4
   EPIC-004_agent_integration: partial  # STORY-022,023,024 done; STORY-025,026,027,036-039 pending
   EPIC-005_advanced_intelligence: partial  # STORY-028,029,030,031,032 done; STORY-033,034,035 pending
-  EPIC-006_session_restoration: planned  # STORY-040 (Sprint 5), STORY-041-045 (Sprint 6)
+  EPIC-006_session_restoration: complete  # STORY-040 (Sprint 5), STORY-041-045 (Sprint 6) - ALL COMPLETE
 
 # Remaining backlog
 remaining_backlog:
