@@ -324,10 +324,19 @@ async fn run() -> Result<()> {
 
             match args.action {
                 SnapshotAction::Create { name, description, parent, format } => {
-                    // Parse parent UUID if provided
+                    // Look up parent snapshot if provided
                     let parent_id = if let Some(parent_name) = parent {
-                        // TODO: Look up parent snapshot by name to get UUID
-                        None // For now, we'll implement this in STORY-044
+                        match orchestrator.get_snapshot(&parent_name).await {
+                            Ok(parent_snapshot) => {
+                                println!("Using parent snapshot: {} (ID: {})", parent_snapshot.name, parent_snapshot.id);
+                                Some(parent_snapshot.id)
+                            }
+                            Err(e) => {
+                                eprintln!("Warning: Parent snapshot '{}' not found: {}", parent_name, e);
+                                eprintln!("Creating full snapshot instead of incremental.");
+                                None
+                            }
+                        }
                     } else {
                         None
                     };
@@ -366,6 +375,10 @@ async fn run() -> Result<()> {
 
                             if let Some(desc) = &snapshot.description {
                                 println!("  Description: {}", desc);
+                            }
+
+                            if let Some(parent_id) = snapshot.parent_id {
+                                println!("  Parent ID: {} (incremental snapshot)", parent_id);
                             }
 
                             if !report.warnings.is_empty() {
@@ -429,12 +442,30 @@ async fn run() -> Result<()> {
                         _ => {
                             // Text format
                             println!("Snapshot: {}", snapshot.name);
+                            println!("  ID: {}", snapshot.id);
                             println!("  Session: {}", snapshot.session);
                             println!("  Created: {}", snapshot.created_at.format("%Y-%m-%d %H:%M:%S"));
                             println!("  Schema Version: {}", snapshot.schema_version);
 
                             if let Some(desc) = &snapshot.description {
                                 println!("  Description: {}", desc);
+                            }
+
+                            // Show parent relationship if exists
+                            if let Some(parent_id) = snapshot.parent_id {
+                                println!("  Parent ID: {}", parent_id);
+
+                                // Try to get ancestry chain
+                                if let Ok(ancestry) = orchestrator.get_snapshot_ancestry(&name).await {
+                                    if ancestry.len() > 1 {
+                                        println!("  Ancestry chain ({} snapshots):", ancestry.len());
+                                        for (i, ancestor) in ancestry.iter().enumerate() {
+                                            let prefix = if i == 0 { "    → " } else { "      ← " };
+                                            println!("{}{} ({})", prefix, ancestor.name,
+                                                ancestor.created_at.format("%Y-%m-%d %H:%M:%S"));
+                                        }
+                                    }
+                                }
                             }
 
                             println!("\n  Tabs ({}):", snapshot.tabs.len());
