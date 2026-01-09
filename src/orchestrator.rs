@@ -811,6 +811,46 @@ impl Orchestrator {
 
         Ok(())
     }
+
+    /// Save a session snapshot to Redis
+    pub async fn save_snapshot(&self, snapshot: &crate::types::SessionSnapshot) -> Result<()> {
+        self.state.save_snapshot(snapshot).await
+    }
+
+    /// List snapshots for the current session
+    pub async fn list_session_snapshots(&self) -> Result<Vec<crate::types::SessionSnapshot>> {
+        let session = self
+            .zellij
+            .active_session_name()
+            .ok_or_else(|| anyhow!("not inside a zellij session"))?;
+
+        self.state.list_snapshots(&session).await
+    }
+
+    /// List all snapshots across all sessions
+    pub async fn list_all_snapshots(&self) -> Result<Vec<crate::types::SessionSnapshot>> {
+        self.state.list_all_snapshots().await
+    }
+
+    /// Get a snapshot by name for the current session
+    pub async fn get_snapshot(&self, name: &str) -> Result<crate::types::SessionSnapshot> {
+        let session = self
+            .zellij
+            .active_session_name()
+            .ok_or_else(|| anyhow!("not inside a zellij session"))?;
+
+        self.state.get_snapshot(&session, name).await
+    }
+
+    /// Delete a snapshot by name for the current session
+    pub async fn delete_snapshot(&self, name: &str) -> Result<()> {
+        let session = self
+            .zellij
+            .active_session_name()
+            .ok_or_else(|| anyhow!("not inside a zellij session"))?;
+
+        self.state.delete_snapshot(&session, name).await
+    }
 }
 
 fn collect_pane_names(value: &Value, panes: &mut HashSet<String>, in_pane_list: bool) {

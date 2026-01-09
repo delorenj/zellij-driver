@@ -384,6 +384,96 @@ impl StateManager {
 
         Ok(result)
     }
+
+    /// Save a session snapshot to Redis
+    pub async fn save_snapshot(&self, snapshot: &crate::types::SessionSnapshot) -> Result<()> {
+        let key = snapshot.redis_key();
+        let json = serde_json::to_string(snapshot)
+            .context("failed to serialize snapshot")?;
+
+        let _: () = self.conn
+            .clone()
+            .set(&key, json)
+            .await
+            .context("failed to save snapshot to redis")?;
+
+        Ok(())
+    }
+
+    /// List snapshots for a specific session
+    pub async fn list_snapshots(&self, session: &str) -> Result<Vec<crate::types::SessionSnapshot>> {
+        let pattern = format!("perth:snapshots:{}:*", session);
+        let keys: Vec<String> = self.conn
+            .clone()
+            .keys(&pattern)
+            .await
+            .context("failed to scan snapshot keys")?;
+
+        let mut snapshots = Vec::new();
+        for key in keys {
+            if let Ok(json) = self.conn.clone().get::<_, String>(&key).await {
+                if let Ok(snapshot) = serde_json::from_str::<crate::types::SessionSnapshot>(&json) {
+                    snapshots.push(snapshot);
+                }
+            }
+        }
+
+        // Sort by creation time (newest first)
+        snapshots.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        Ok(snapshots)
+    }
+
+    /// List all snapshots across all sessions
+    pub async fn list_all_snapshots(&self) -> Result<Vec<crate::types::SessionSnapshot>> {
+        let pattern = "perth:snapshots:*";
+        let keys: Vec<String> = self.conn
+            .clone()
+            .keys(pattern)
+            .await
+            .context("failed to scan snapshot keys")?;
+
+        let mut snapshots = Vec::new();
+        for key in keys {
+            if let Ok(json) = self.conn.clone().get::<_, String>(&key).await {
+                if let Ok(snapshot) = serde_json::from_str::<crate::types::SessionSnapshot>(&json) {
+                    snapshots.push(snapshot);
+                }
+            }
+        }
+
+        // Sort by creation time (newest first)
+        snapshots.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        Ok(snapshots)
+    }
+
+    /// Get a snapshot by name
+    pub async fn get_snapshot(&self, session: &str, name: &str) -> Result<crate::types::SessionSnapshot> {
+        let key = format!("perth:snapshots:{}:{}", session, name);
+        let json: String = self.conn
+            .clone()
+            .get(&key)
+            .await
+            .context("snapshot not found")?;
+
+        let snapshot = serde_json::from_str(&json)
+            .context("failed to deserialize snapshot")?;
+
+        Ok(snapshot)
+    }
+
+    /// Delete a snapshot by name
+    pub async fn delete_snapshot(&self, session: &str, name: &str) -> Result<()> {
+        let key = format!("perth:snapshots:{}:{}", session, name);
+        let _: () = self.conn
+            .clone()
+            .del(&key)
+            .await
+            .context("failed to delete snapshot")?;
+
+        Ok(())
+    }
 }
 
 /// Result of a keyspace migration operation.
