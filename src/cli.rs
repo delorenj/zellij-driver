@@ -579,6 +579,45 @@ BEHAVIOR:
               help = "Output format: text, json, or json-compact")]
         format: OutputFormat,
     },
+
+    /// Run snapshot daemon for automatic periodic snapshots
+    ///
+    /// Creates snapshots at regular intervals with automatic naming.
+    /// Runs in the foreground until interrupted (CTRL+C).
+    #[command(
+        after_help = "EXAMPLES:
+    # Create snapshot every 5 minutes
+    zdrive snapshot daemon --interval 300
+
+    # Create snapshots every hour with custom prefix
+    zdrive snapshot daemon --interval 3600 --prefix backup
+
+    # Create incremental snapshots linked to previous auto-snapshot
+    zdrive snapshot daemon --interval 600 --incremental
+
+BEHAVIOR:
+    - Auto-names: <prefix>-YYYY-MM-DD-HHMMSS
+    - Runs in foreground (CTRL+C to stop)
+    - Logs each snapshot creation
+    - Skips snapshot if no changes detected
+    - With --incremental, links to previous auto-snapshot"
+    )]
+    Daemon {
+        /// Interval between snapshots in seconds
+        #[arg(short, long, default_value = "300",
+              help = "Snapshot interval in seconds (default: 300 = 5 minutes)")]
+        interval: u64,
+
+        /// Prefix for auto-generated snapshot names
+        #[arg(short, long, default_value = "auto",
+              help = "Prefix for snapshot names (default: auto)")]
+        prefix: String,
+
+        /// Create incremental snapshots
+        #[arg(long,
+              help = "Link snapshots as incremental (uses previous auto-snapshot as parent)")]
+        incremental: bool,
+    },
 }
 
 pub fn command_name() -> String {
