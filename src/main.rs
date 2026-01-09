@@ -6,6 +6,7 @@ mod filter;
 mod llm;
 mod orchestrator;
 mod output;
+mod snapshot;
 mod state;
 mod types;
 mod zellij;
