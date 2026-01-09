@@ -541,6 +541,81 @@ async fn run() -> Result<()> {
                         }
                     }
                 }
+                SnapshotAction::Daemon { interval, prefix, incremental } => {
+                    use tokio::time::{interval as tokio_interval, Duration};
+                    use chrono::Local;
+
+                    println!("Snapshot daemon started");
+                    println!("  Interval: {} seconds", interval);
+                    println!("  Prefix: {}", prefix);
+                    println!("  Incremental: {}", incremental);
+                    println!("  Press CTRL+C to stop\n");
+
+                    let mut interval_timer = tokio_interval(Duration::from_secs(interval));
+                    let mut last_snapshot_name: Option<String> = None;
+
+                    loop {
+                        interval_timer.tick().await;
+
+                        // Generate snapshot name with timestamp
+                        let timestamp = Local::now().format("%Y-%m-%d-%H%M%S");
+                        let snapshot_name = format!("{}-{}", prefix, timestamp);
+
+                        // Determine parent if incremental
+                        let parent = if incremental {
+                            last_snapshot_name.clone()
+                        } else {
+                            None
+                        };
+
+                        // Create snapshot
+                        println!("[{}] Creating snapshot: {}", Local::now().format("%H:%M:%S"), snapshot_name);
+
+                        match orchestrator.get_snapshot(&snapshot_name).await {
+                            Ok(_) => {
+                                // Snapshot already exists (unlikely with timestamp)
+                                eprintln!("  Snapshot '{}' already exists, skipping", snapshot_name);
+                                continue;
+                            }
+                            Err(_) => {
+                                // Doesn't exist, proceed to create
+                            }
+                        }
+
+                        // Look up parent ID if specified
+                        let parent_id = if let Some(parent_name) = parent {
+                            match orchestrator.get_snapshot(&parent_name).await {
+                                Ok(parent_snapshot) => Some(parent_snapshot.id),
+                                Err(_) => None,
+                            }
+                        } else {
+                            None
+                        };
+
+                        // Capture and save snapshot
+                        match state_capture.capture_session(snapshot_name.clone(), None, parent_id).await {
+                            Ok((snapshot, report)) => {
+                                if let Err(e) = orchestrator.save_snapshot(&snapshot).await {
+                                    eprintln!("  Failed to save snapshot: {}", e);
+                                    continue;
+                                }
+
+                                println!("  ✓ Snapshot saved: {} tabs, {} panes",
+                                    snapshot.tabs.len(), snapshot.pane_count);
+
+                                if !report.warnings.is_empty() {
+                                    println!("  ⚠ {} warnings", report.warnings.len());
+                                }
+
+                                // Track for incremental next time
+                                last_snapshot_name = Some(snapshot_name);
+                            }
+                            Err(e) => {
+                                eprintln!("  Failed to create snapshot: {}", e);
+                            }
+                        }
+                    }
+                }
             }
         }
         Command::Migrate(args) => {
@@ -620,9 +695,13 @@ fn needs_zellij_check(command: &Command) -> bool {
         Command::Migrate(_) => false,
         Command::Config(_) => false,
         Command::Snapshot(args) => {
-            // Create and Restore require Zellij session, others only use Redis
+            // Create, Restore, and Daemon require Zellij session, others only use Redis
             use cli::SnapshotAction;
-            matches!(args.action, SnapshotAction::Create { .. } | SnapshotAction::Restore { .. })
+            matches!(args.action,
+                SnapshotAction::Create { .. } |
+                SnapshotAction::Restore { .. } |
+                SnapshotAction::Daemon { .. }
+            )
         }
     }
 }
