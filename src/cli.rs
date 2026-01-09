@@ -46,6 +46,8 @@ pub enum Command {
     Migrate(MigrateArgs),
     /// View or modify configuration settings
     Config(ConfigArgs),
+    /// Manage session snapshots for restoration
+    Snapshot(SnapshotArgs),
 }
 
 #[derive(Args)]
@@ -436,6 +438,146 @@ RELATED COMMANDS:
     Info {
         /// Tab name to get info for
         name: String,
+    },
+}
+
+#[derive(Args)]
+pub struct SnapshotArgs {
+    #[command(subcommand)]
+    pub action: SnapshotAction,
+}
+
+#[derive(Subcommand)]
+pub enum SnapshotAction {
+    /// Create a snapshot of the current session
+    ///
+    /// Captures the current state of all tabs and panes in the session,
+    /// including names, positions, working directories, and layout information.
+    /// Snapshots are stored in Redis and can be restored later.
+    #[command(
+        after_help = "EXAMPLES:
+    # Create a simple snapshot
+    zdrive snapshot create my-work
+
+    # Create snapshot with description
+    zdrive snapshot create my-work --description \"Before refactoring\"
+
+    # Create incremental snapshot (stores only changes)
+    zdrive snapshot create my-work-v2 --parent my-work
+
+    # Create snapshot and view as JSON
+    zdrive snapshot create my-work --format json
+
+REDIS SCHEMA:
+    Snapshots are stored at: perth:snapshots:{session}:{name}
+    Metadata is indexed for fast lookup and listing."
+    )]
+    Create {
+        /// Name for this snapshot
+        #[arg(help = "Name for the snapshot (must be unique per session)")]
+        name: String,
+
+        /// Optional description
+        #[arg(short, long,
+              help = "Description of what this snapshot captures")]
+        description: Option<String>,
+
+        /// Parent snapshot ID for incremental snapshots
+        #[arg(long,
+              help = "Parent snapshot for delta/incremental snapshot")]
+        parent: Option<String>,
+
+        /// Output format
+        #[arg(short = 'f', long, default_value = "text", value_enum,
+              help = "Output format: text, json, or json-compact")]
+        format: OutputFormat,
+    },
+
+    /// List all snapshots for the current session
+    ///
+    /// Shows all saved snapshots with creation time, pane count, and description.
+    /// Snapshots are organized by session.
+    #[command(
+        after_help = "EXAMPLES:
+    # List all snapshots in current session
+    zdrive snapshot list
+
+    # List with JSON output
+    zdrive snapshot list --format json
+
+    # List all snapshots across all sessions
+    zdrive snapshot list --all-sessions"
+    )]
+    List {
+        /// Show snapshots from all sessions (not just current)
+        #[arg(long,
+              help = "Show snapshots from all sessions")]
+        all_sessions: bool,
+
+        /// Output format
+        #[arg(short = 'f', long, default_value = "text", value_enum,
+              help = "Output format: text, json, or json-compact")]
+        format: OutputFormat,
+    },
+
+    /// Show details of a specific snapshot
+    ///
+    /// Displays comprehensive information about a snapshot including
+    /// all tabs, panes, and layout configuration.
+    Show {
+        /// Snapshot name
+        #[arg(help = "Name of the snapshot to show")]
+        name: String,
+
+        /// Output format
+        #[arg(short = 'f', long, default_value = "text", value_enum,
+              help = "Output format: text, json, or json-compact")]
+        format: OutputFormat,
+    },
+
+    /// Delete a snapshot
+    Delete {
+        /// Snapshot name
+        #[arg(help = "Name of the snapshot to delete")]
+        name: String,
+    },
+
+    /// Restore a session from a snapshot
+    ///
+    /// Recreates tabs and panes from a saved snapshot. Handles missing panes
+    /// gracefully and provides detailed restoration reports.
+    #[command(
+        after_help = "EXAMPLES:
+    # Restore from a snapshot
+    zdrive snapshot restore my-work
+
+    # Restore with detailed output
+    zdrive snapshot restore my-work --format json
+
+    # Dry run (show what would be restored)
+    zdrive snapshot restore my-work --dry-run
+
+BEHAVIOR:
+    - Creates missing tabs
+    - Creates panes with correct names and working directories
+    - Restores focus state
+    - Handles warnings for unnamed or failed panes
+    - Generates detailed restoration report"
+    )]
+    Restore {
+        /// Snapshot name
+        #[arg(help = "Name of the snapshot to restore")]
+        name: String,
+
+        /// Dry run (show what would be done without making changes)
+        #[arg(long,
+              help = "Dry run mode - show restoration plan without executing")]
+        dry_run: bool,
+
+        /// Output format
+        #[arg(short = 'f', long, default_value = "text", value_enum,
+              help = "Output format: text, json, or json-compact")]
+        format: OutputFormat,
     },
 }
 
