@@ -10,6 +10,7 @@ const MIN_ZELLIJ_VERSION: &str = ">=0.39.0";
 
 static VERSION_CHECK: OnceLock<Result<Version, String>> = OnceLock::new();
 
+#[derive(Clone, Copy)]
 pub struct ZellijDriver;
 
 impl ZellijDriver {

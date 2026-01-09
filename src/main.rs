@@ -6,6 +6,8 @@ mod filter;
 mod llm;
 mod orchestrator;
 mod output;
+mod restore;
+mod snapshot;
 mod state;
 mod types;
 mod zellij;
@@ -314,6 +316,202 @@ async fn run() -> Result<()> {
                 }
             }
         }
+        Command::Snapshot(args) => {
+            use cli::SnapshotAction;
+            use snapshot::StateCapture;
+
+            let state_capture = StateCapture::new(zellij::ZellijDriver::new());
+
+            match args.action {
+                SnapshotAction::Create { name, description, parent, format } => {
+                    // Parse parent UUID if provided
+                    let parent_id = if let Some(parent_name) = parent {
+                        // TODO: Look up parent snapshot by name to get UUID
+                        None // For now, we'll implement this in STORY-044
+                    } else {
+                        None
+                    };
+
+                    // Capture session state
+                    let (snapshot, report) = state_capture
+                        .capture_session(name.clone(), description, parent_id)
+                        .await?;
+
+                    // Save to Redis
+                    orchestrator.save_snapshot(&snapshot).await?;
+
+                    // Format output
+                    match format {
+                        OutputFormat::Json => {
+                            let output = serde_json::json!({
+                                "snapshot": snapshot,
+                                "report": report,
+                            });
+                            println!("{}", serde_json::to_string_pretty(&output)?);
+                        }
+                        OutputFormat::JsonCompact => {
+                            let output = serde_json::json!({
+                                "snapshot": snapshot,
+                                "report": report,
+                            });
+                            println!("{}", serde_json::to_string(&output)?);
+                        }
+                        _ => {
+                            // Text format
+                            println!("Snapshot created: {}", snapshot.name);
+                            println!("  Session: {}", snapshot.session);
+                            println!("  Tabs: {}", snapshot.tabs.len());
+                            println!("  Panes: {}", snapshot.pane_count);
+                            println!("  Created: {}", snapshot.created_at.format("%Y-%m-%d %H:%M:%S"));
+
+                            if let Some(desc) = &snapshot.description {
+                                println!("  Description: {}", desc);
+                            }
+
+                            if !report.warnings.is_empty() {
+                                println!("\nWarnings:");
+                                for warning in &report.warnings {
+                                    let level_str = format!("{:?}", warning.level).to_uppercase();
+                                    println!("  [{}] {}", level_str, warning.message);
+                                    if let Some(component) = &warning.component {
+                                        println!("      Component: {}", component);
+                                    }
+                                }
+                            }
+
+                            println!("\nSnapshot saved to Redis: {}", snapshot.redis_key());
+                        }
+                    }
+                }
+                SnapshotAction::List { all_sessions, format } => {
+                    let snapshots = if all_sessions {
+                        orchestrator.list_all_snapshots().await?
+                    } else {
+                        orchestrator.list_session_snapshots().await?
+                    };
+
+                    match format {
+                        OutputFormat::Json => {
+                            println!("{}", serde_json::to_string_pretty(&snapshots)?);
+                        }
+                        OutputFormat::JsonCompact => {
+                            println!("{}", serde_json::to_string(&snapshots)?);
+                        }
+                        _ => {
+                            // Text format
+                            if snapshots.is_empty() {
+                                println!("No snapshots found.");
+                            } else {
+                                println!("Snapshots:");
+                                for snapshot in snapshots {
+                                    println!("\n  {}", snapshot.name);
+                                    println!("    Session: {}", snapshot.session);
+                                    println!("    Created: {}", snapshot.created_at.format("%Y-%m-%d %H:%M:%S"));
+                                    println!("    Tabs: {} | Panes: {}", snapshot.tabs.len(), snapshot.pane_count);
+                                    if let Some(desc) = &snapshot.description {
+                                        println!("    Description: {}", desc);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                SnapshotAction::Show { name, format } => {
+                    let snapshot = orchestrator.get_snapshot(&name).await?;
+
+                    match format {
+                        OutputFormat::Json => {
+                            println!("{}", serde_json::to_string_pretty(&snapshot)?);
+                        }
+                        OutputFormat::JsonCompact => {
+                            println!("{}", serde_json::to_string(&snapshot)?);
+                        }
+                        _ => {
+                            // Text format
+                            println!("Snapshot: {}", snapshot.name);
+                            println!("  Session: {}", snapshot.session);
+                            println!("  Created: {}", snapshot.created_at.format("%Y-%m-%d %H:%M:%S"));
+                            println!("  Schema Version: {}", snapshot.schema_version);
+
+                            if let Some(desc) = &snapshot.description {
+                                println!("  Description: {}", desc);
+                            }
+
+                            println!("\n  Tabs ({}):", snapshot.tabs.len());
+                            for tab in &snapshot.tabs {
+                                println!("    [{}] {} ({} panes)",
+                                    tab.index, tab.name, tab.panes.len());
+                                for pane in &tab.panes {
+                                    let focus = if pane.focused { " [FOCUSED]" } else { "" };
+                                    println!("      - {}{}", pane.name, focus);
+                                    if let Some(cwd) = &pane.cwd {
+                                        println!("        CWD: {}", cwd);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                SnapshotAction::Delete { name } => {
+                    orchestrator.delete_snapshot(&name).await?;
+                    println!("Snapshot '{}' deleted.", name);
+                }
+                SnapshotAction::Restore { name, dry_run, format } => {
+                    // Load snapshot
+                    let snapshot = orchestrator.get_snapshot(&name).await?;
+
+                    // Perform restoration
+                    let report = orchestrator.restore_snapshot(&snapshot, dry_run).await?;
+
+                    // Format output
+                    match format {
+                        OutputFormat::Json => {
+                            println!("{}", serde_json::to_string_pretty(&report)?);
+                        }
+                        OutputFormat::JsonCompact => {
+                            println!("{}", serde_json::to_string(&report)?);
+                        }
+                        _ => {
+                            // Text format
+                            if dry_run {
+                                println!("=== DRY RUN (no changes made) ===\n");
+                            }
+
+                            println!("Restoration: {}", snapshot.name);
+                            println!("  Status: {:?}", report.status);
+                            println!("  Session: {}", report.session);
+                            println!("  Tabs restored: {}", report.tabs_restored);
+                            println!("  Tabs failed: {}", report.tabs_failed);
+                            println!("  Panes restored: {}", report.panes_restored);
+                            println!("  Panes failed: {}", report.panes_failed);
+                            println!("  Duration: {}ms", report.duration_ms);
+
+                            if !report.warnings.is_empty() {
+                                println!("\nWarnings ({}):", report.warnings.len());
+                                for warning in &report.warnings {
+                                    let level_str = format!("{:?}", warning.level).to_uppercase();
+                                    println!("  [{}] {}", level_str, warning.message);
+                                    if let Some(component) = &warning.component {
+                                        println!("      Component: {}", component);
+                                    }
+                                    if let Some(suggestion) = &warning.suggestion {
+                                        println!("      Suggestion: {}", suggestion);
+                                    }
+                                }
+                            }
+
+                            if report.status == crate::types::RestoreStatus::Success {
+                                println!("\n✓ Session successfully restored from snapshot");
+                            } else if report.status == crate::types::RestoreStatus::Partial {
+                                println!("\n⚠ Session partially restored (see warnings above)");
+                            } else {
+                                println!("\n✗ Session restoration failed (see errors above)");
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Command::Migrate(args) => {
             let result = orchestrator.migrate_keyspace(args.dry_run).await?;
 
@@ -390,5 +588,10 @@ fn needs_zellij_check(command: &Command) -> bool {
         // These commands only use Redis or local config
         Command::Migrate(_) => false,
         Command::Config(_) => false,
+        Command::Snapshot(args) => {
+            // Create and Restore require Zellij session, others only use Redis
+            use cli::SnapshotAction;
+            matches!(args.action, SnapshotAction::Create { .. } | SnapshotAction::Restore { .. })
+        }
     }
 }
