@@ -11,13 +11,13 @@ description: >
   (5) Integration with iMi worktrees for branch-per-pane workflows.
 ---
 
-# Zellij Driver (Perth)
+# Zellij Driver (znav)
 
 ## Overview
 
-Perth (`znav`) is a Redis-backed Zellij pane manager that tracks developer intent and cognitive context across terminal sessions. It enables programmatic control of Zellij tabs and panes, making it ideal for orchestrating parallel agentic workflows.
+`znav` is a Redis-backed Zellij pane manager that tracks developer intent and cognitive context across terminal sessions. It enables programmatic control of Zellij tabs and panes, making it ideal for orchestrating parallel agentic workflows.
 
-**Core Philosophy:** Capture what you're working on, not just what you typed. Perth bridges the gap between terminal activity and developer intent, enabling AI agents to understand and resume work context.
+**Core Philosophy:** Capture what you're working on, not just what you typed. `znav` bridges the gap between terminal activity and developer intent, enabling AI agents to understand and resume work context.
 
 ## Core Capabilities
 
@@ -52,7 +52,7 @@ znav pane batch --tab "myapp(fixes)" \
 znav pane batch --tab "myapp(fixes)" --panes a,b,c --layout horizontal
 ```
 
-### 2. Intent Tracking (Perth v2.0)
+### 2. Intent Tracking (znav v2.0)
 
 Track what you're working on, not just commands:
 
@@ -170,7 +170,7 @@ znav pane batch --tab "myapp(fixes)" \
 
 ### Pattern 3: Session Resumption
 
-When returning to a pane, Perth displays the last intent:
+When returning to a pane, `znav` displays the last intent:
 
 ```bash
 # First session
@@ -239,11 +239,11 @@ For agentic workflows, use consistent naming:
 
 ## Redis Keyspace
 
-Perth v2.0 uses the `perth:` keyspace:
+`znav` v2.0 uses the `znav:` keyspace:
 
 ```
-perth:pane:{name}          # Pane metadata hash
-perth:intent:{name}        # Intent history list (LPUSH/LRANGE)
+znav:pane:{name}          # Pane metadata hash
+znav:intent:{name}        # Intent history list (LPUSH/LRANGE)
 ```
 
 Migration from v1.0 (`znav:`) keyspace:
@@ -270,6 +270,12 @@ znav migrate               # Execute migration
 | `znav reconcile` | Sync state with layout |
 | `znav config show` | View configuration |
 | `znav config consent --grant` | Allow LLM sharing |
+
+## Developer Resources
+
+For contributors and agents extending `znav`:
+- **Developer Guidelines**: See `skill/DEVELOPER.md` for P0 requirements and standards.
+- **Architecture**: See `docs/ENGINEERING_STANDARDS.md` for anti-patterns and patterns.
 
 ## Integration Points
 
