@@ -1,10 +1,10 @@
 version: "6.0.0"
-project_name: "Perth"
+project_name: "Perth (zellij-driver)"
 project_level: 3
-current_sprint: 5
-sprint_plan_path: "docs/sprint-plan-perth-2026-01-05.md"
-sprint_5_revision: "docs/sprint-5-revised.md"
+current_sprint: 7
+sprint_plan_path: "docs/sprint-plan-hybrid-architecture-phase1-2026-01-11.md"
 
+# Previous sprints (Perth v2.0-2.1)
 sprints:
   - sprint_number: 1
     start_date: "2026-01-06"
@@ -301,47 +301,150 @@ sprints:
     end_date: "2026-03-28"
     capacity_points: 30
     committed_points: 21
-    completed_points: 0
-    status: "planned"
+    completed_points: 21
+    status: "completed"
     goal: "Complete Session Restoration feature (v2.1)"
     stories:
       - story_id: "STORY-041"
         title: "State Capture Module"
         points: 5
-        status: "pending"
+        status: "completed"
         priority: "should_have"
         epic: "EPIC-006"
       - story_id: "STORY-042"
         title: "Snapshot Create & List Commands"
         points: 5
-        status: "pending"
+        status: "completed"
         priority: "should_have"
         epic: "EPIC-006"
       - story_id: "STORY-043"
         title: "Restore Command"
         points: 5
-        status: "pending"
+        status: "completed"
         priority: "should_have"
         epic: "EPIC-006"
       - story_id: "STORY-044"
         title: "Incremental Snapshot Support"
         points: 3
-        status: "pending"
+        status: "completed"
         priority: "should_have"
         epic: "EPIC-006"
       - story_id: "STORY-045"
         title: "Snapshot Daemon"
         points: 3
-        status: "pending"
+        status: "completed"
         priority: "could_have"
         epic: "EPIC-006"
+
+  # Phase 1: Hybrid BMAD + Letta Architecture (Foundation)
+  - sprint_number: 7
+    start_date: "2026-01-11"
+    end_date: "2026-01-25"
+    capacity_points: 30
+    committed_points: 26
+    completed_points: 3
+    status: "in_progress"
+    goal: "Establish event store infrastructure and event persistence pipeline"
+    stories:
+      - story_id: "STORY-000"
+        title: "Development Environment Setup"
+        points: 3
+        status: "completed"
+        priority: "must_have"
+        epic: "Infrastructure Foundation"
+      - story_id: "STORY-001"
+        title: "PostgreSQL Event Store Schema"
+        points: 3
+        status: "not_started"
+        priority: "must_have"
+        epic: "Database Foundation"
+      - story_id: "STORY-002"
+        title: "Database Migration Tooling"
+        points: 2
+        status: "not_started"
+        priority: "must_have"
+        epic: "Database Foundation"
+      - story_id: "STORY-003"
+        title: "Bloodbank Event Type Definitions"
+        points: 3
+        status: "not_started"
+        priority: "must_have"
+        epic: "Event Infrastructure"
+      - story_id: "STORY-004"
+        title: "Event Store Manager - Bloodbank Subscription"
+        points: 5
+        status: "not_started"
+        priority: "must_have"
+        epic: "Event Store Manager"
+      - story_id: "STORY-005"
+        title: "Event Store Manager - PostgreSQL Writer"
+        points: 5
+        status: "not_started"
+        priority: "must_have"
+        epic: "Event Store Manager"
+      - story_id: "STORY-006"
+        title: "Event Store Manager - Workflow State Projections"
+        points: 5
+        status: "not_started"
+        priority: "should_have"
+        epic: "Event Store Manager"
+
+  - sprint_number: 8
+    start_date: "2026-01-26"
+    end_date: "2026-02-08"
+    capacity_points: 30
+    committed_points: 31
+    completed_points: 0
+    status: "planned"
+    goal: "Complete event query API and end-to-end BMAD → Letta handoff"
+    stories:
+      - story_id: "STORY-007"
+        title: "Event Store API - Basic Event Queries"
+        points: 5
+        status: "not_started"
+        priority: "must_have"
+        epic: "Event Store API"
+      - story_id: "STORY-008"
+        title: "Event Store API - Causation Chain Queries"
+        points: 8
+        status: "not_started"
+        priority: "must_have"
+        epic: "Event Store API"
+      - story_id: "STORY-009"
+        title: "Event Store API - WebSocket Event Stream"
+        points: 5
+        status: "not_started"
+        priority: "should_have"
+        epic: "Event Store API"
+      - story_id: "STORY-010"
+        title: "BMAD Orchestrator Event Publishing"
+        points: 3
+        status: "not_started"
+        priority: "must_have"
+        epic: "BMAD Integration"
+      - story_id: "STORY-011"
+        title: "Letta Runtime Event Consumption"
+        points: 5
+        status: "not_started"
+        priority: "must_have"
+        epic: "Letta Integration"
+      - story_id: "STORY-012"
+        title: "End-to-End Handoff Integration Test"
+        points: 5
+        status: "not_started"
+        priority: "must_have"
+        epic: "Integration Testing"
 
 velocity:
   sprint_1: 28
   sprint_2: 27
   sprint_3: 28
   sprint_4: 22
-  rolling_average: 26.25
+  sprint_5: 24
+  sprint_6: 21
+  sprint_7: null  # Will be filled when sprint completes
+  sprint_8: null
+  rolling_average: 25
 
 team:
   size: 1
