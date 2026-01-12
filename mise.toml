@@ -1,0 +1,128 @@
+# Mise Configuration for zellij-driver
+# Root configuration for tool versions and environment
+
+[tools]
+# Rust toolchain managed via rustup
+# rust = "stable"  # Uncomment if you want mise to manage Rust
+
+[env]
+PROJECT_ROOT = "{{cwd}}"
+CARGO_TARGET_DIR = "{{cwd}}/target"
+
+# ============================================================================
+# Development Environment Tasks
+# ============================================================================
+
+[tasks.dev]
+description = "Start all development services (PostgreSQL, RabbitMQ, Redis)"
+run = "docker compose up -d"
+
+[tasks."dev:logs"]
+description = "Follow logs from all services"
+run = "docker compose logs -f"
+
+[tasks."dev:stop"]
+description = "Stop all development services"
+run = "docker compose stop"
+
+[tasks."dev:down"]
+description = "Stop and remove all development services"
+run = "docker compose down"
+
+[tasks."dev:restart"]
+description = "Restart all development services"
+run = "docker compose restart"
+
+[tasks."dev:health"]
+description = "Check health of all services"
+run = "scripts/health-check.sh"
+depends = ["dev"]
+
+[tasks."dev:clean"]
+description = "Stop services and remove all volumes (WARNING: deletes all data)"
+run = "docker compose down -v"
+
+# ============================================================================
+# Database Tasks
+# ============================================================================
+
+[tasks."db:migrate"]
+description = "Run database migrations"
+run = "echo 'Migrations will be implemented in STORY-002'"
+
+[tasks."db:rollback"]
+description = "Rollback last migration"
+run = "echo 'Migration rollback will be implemented in STORY-002'"
+
+[tasks."db:reset"]
+description = "Reset database to clean state"
+run = """
+docker compose down postgres
+docker volume rm zellij-driver_postgres_data || true
+docker compose up -d postgres
+sleep 5
+echo 'Database reset complete. Run mise db:migrate to apply schema.'
+"""
+
+[tasks."db:psql"]
+description = "Connect to PostgreSQL with psql"
+run = "docker compose exec postgres psql -U event_store -d event_store"
+
+# ============================================================================
+# RabbitMQ Tasks
+# ============================================================================
+
+[tasks."rabbitmq:ui"]
+description = "Open RabbitMQ management UI in browser"
+run = "open http://localhost:15672 || xdg-open http://localhost:15672"
+
+[tasks."rabbitmq:status"]
+description = "Show RabbitMQ status"
+run = "docker compose exec rabbitmq rabbitmqctl status"
+
+[tasks."rabbitmq:queues"]
+description = "List all RabbitMQ queues"
+run = "docker compose exec rabbitmq rabbitmqctl list_queues"
+
+# ============================================================================
+# Redis Tasks
+# ============================================================================
+
+[tasks."redis:cli"]
+description = "Connect to Redis with redis-cli"
+run = "docker compose exec redis redis-cli"
+
+[tasks."redis:ping"]
+description = "Ping Redis to check connection"
+run = "docker compose exec redis redis-cli ping"
+
+# ============================================================================
+# Testing Tasks
+# ============================================================================
+
+[tasks.test]
+description = "Run all tests"
+run = "cargo test"
+
+[tasks."test:integration"]
+description = "Run integration tests"
+run = "cargo test --test '*' -- --test-threads=1"
+depends = ["dev"]
+
+# ============================================================================
+# Build Tasks
+# ============================================================================
+
+[tasks.build]
+description = "Build the project"
+run = "cargo build"
+
+[tasks."build:release"]
+description = "Build release version"
+run = "cargo build --release"
+
+# Task imports from .mise/tasks/ directory
+[task_config]
+includes = [
+    ".mise/tasks/*.toml"
+]
