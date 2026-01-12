@@ -18,6 +18,7 @@ pub struct Config {
     pub display: DisplayConfig,
     pub bloodbank: BloodbankConfig,
     pub tab: TabConfig,
+    pub snapshot: SnapshotConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +98,21 @@ impl TabConfig {
     }
 }
 
+/// Configuration for snapshot behavior
+#[derive(Debug, Clone)]
+pub struct SnapshotConfig {
+    /// Number of snapshots to keep per session
+    pub retention_limit: usize,
+}
+
+impl Default for SnapshotConfig {
+    fn default() -> Self {
+        Self {
+            retention_limit: 20,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Default)]
 struct FileConfig {
     redis_url: Option<String>,
@@ -110,6 +126,8 @@ struct FileConfig {
     bloodbank: BloodbankConfigFile,
     #[serde(default)]
     tab: TabConfigFile,
+    #[serde(default)]
+    snapshot: SnapshotConfigFile,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -144,6 +162,11 @@ struct BloodbankConfigFile {
 #[derive(Debug, Deserialize, Default)]
 struct TabConfigFile {
     naming_pattern: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct SnapshotConfigFile {
+    retention_limit: Option<usize>,
 }
 
 impl Config {
@@ -185,6 +208,9 @@ impl Config {
             },
             tab: TabConfig {
                 naming_pattern: file_config.tab.naming_pattern.unwrap_or_else(|| TabConfig::default().naming_pattern),
+            },
+            snapshot: SnapshotConfig {
+                retention_limit: file_config.snapshot.retention_limit.unwrap_or(20),
             },
         })
     }
@@ -528,6 +554,7 @@ impl Default for Config {
             display: DisplayConfig::default(),
             bloodbank: BloodbankConfig::default(),
             tab: TabConfig::default(),
+            snapshot: SnapshotConfig::default(),
         }
     }
 }

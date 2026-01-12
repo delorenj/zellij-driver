@@ -817,6 +817,11 @@ impl Orchestrator {
         self.state.save_snapshot(snapshot).await
     }
 
+    /// Enforce snapshot retention policy
+    pub async fn enforce_snapshot_retention(&self, session: &str, limit: usize) -> Result<usize> {
+        self.state.enforce_retention_policy(session, limit).await
+    }
+
     /// List snapshots for the current session
     pub async fn list_session_snapshots(&self) -> Result<Vec<crate::types::SessionSnapshot>> {
         let session = self

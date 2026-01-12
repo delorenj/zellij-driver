@@ -504,6 +504,27 @@ impl StateManager {
 
         Ok(ancestry)
     }
+
+    /// Enforce snapshot retention policy for a session.
+    ///
+    /// Keeps the `limit` most recent snapshots and deletes the rest.
+    /// Returns the number of snapshots deleted.
+    pub async fn enforce_retention_policy(&self, session: &str, limit: usize) -> Result<usize> {
+        let snapshots = self.list_snapshots(session).await?;
+        if snapshots.len() <= limit {
+            return Ok(0);
+        }
+
+        let to_delete = &snapshots[limit..];
+        let mut deleted_count = 0;
+
+        for snapshot in to_delete {
+            self.delete_snapshot(session, &snapshot.name).await?;
+            deleted_count += 1;
+        }
+
+        Ok(deleted_count)
+    }
 }
 
 /// Result of a keyspace migration operation.

@@ -349,6 +349,13 @@ async fn run() -> Result<()> {
                     // Save to Redis
                     orchestrator.save_snapshot(&snapshot).await?;
 
+                    // Enforce retention policy
+                    if let Ok(deleted) = orchestrator.enforce_snapshot_retention(&snapshot.session, config.snapshot.retention_limit).await {
+                        if deleted > 0 {
+                            println!("  (Cleaned up {} old snapshot{})", deleted, if deleted == 1 { "" } else { "s" });
+                        }
+                    }
+
                     // Format output
                     match format {
                         OutputFormat::Json => {
@@ -598,6 +605,13 @@ async fn run() -> Result<()> {
                                 if let Err(e) = orchestrator.save_snapshot(&snapshot).await {
                                     eprintln!("  Failed to save snapshot: {}", e);
                                     continue;
+                                }
+
+                                // Enforce retention policy
+                                if let Ok(deleted) = orchestrator.enforce_snapshot_retention(&snapshot.session, config.snapshot.retention_limit).await {
+                                    if deleted > 0 {
+                                        println!("  (Cleaned up {} old snapshot{})", deleted, if deleted == 1 { "" } else { "s" });
+                                    }
                                 }
 
                                 println!("  ✓ Snapshot saved: {} tabs, {} panes",
