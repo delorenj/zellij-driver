@@ -336,6 +336,15 @@ impl Config {
             ));
         }
 
+        // Snapshot settings
+        lines.push(String::new());
+        lines.push("Snapshot Settings:".to_string());
+        lines.push(format!(
+            "  retention_limit: {}{}",
+            self.snapshot.retention_limit,
+            if self.snapshot.retention_limit == 20 { " (default)" } else { "" }
+        ));
+
         lines.join("\n")
     }
 
@@ -350,6 +359,7 @@ impl Config {
         let valid_privacy_keys = ["consent_given", "consent_timestamp"];
         let valid_display_keys = ["show_last_intent"];
         let valid_bloodbank_keys = ["enabled", "amqp_url", "exchange", "routing_key_prefix"];
+        let valid_snapshot_keys = ["retention_limit"];
 
         match parts.as_slice() {
             [top_key] if *top_key == "redis_url" => {}
@@ -357,9 +367,10 @@ impl Config {
             ["privacy", sub_key] if valid_privacy_keys.contains(sub_key) => {}
             ["display", sub_key] if valid_display_keys.contains(sub_key) => {}
             ["bloodbank", sub_key] if valid_bloodbank_keys.contains(sub_key) => {}
+            ["snapshot", sub_key] if valid_snapshot_keys.contains(sub_key) => {}
             _ => {
                 return Err(anyhow!(
-                    "Unknown configuration key: '{}'\nValid keys: redis_url, llm.*, privacy.*, display.*, bloodbank.*",
+                    "Unknown configuration key: '{}'\nValid keys: redis_url, llm.*, privacy.*, display.*, bloodbank.*, snapshot.*",
                     key
                 ));
             }
@@ -384,6 +395,10 @@ impl Config {
         } else if key == "llm.max_tokens" {
             if new_value.parse::<u32>().is_err() {
                 return Err(anyhow!("Invalid max_tokens: must be a positive integer"));
+            }
+        } else if key == "snapshot.retention_limit" {
+            if new_value.parse::<usize>().is_err() {
+                return Err(anyhow!("Invalid retention_limit: must be a positive integer"));
             }
         } else if key == "privacy.consent_given" || key == "display.show_last_intent" || key == "bloodbank.enabled" {
             if !["true", "false", "yes", "no"].contains(&new_value.to_lowercase().as_str()) {
@@ -477,6 +492,22 @@ impl Config {
                     doc["bloodbank"][*sub_key] = toml_edit::value(bool_val);
                 } else {
                     doc["bloodbank"][*sub_key] = value(new_value);
+                }
+            }
+            ["snapshot", sub_key] => {
+                // Ensure [snapshot] table exists
+                if !doc.contains_key("snapshot") {
+                    doc["snapshot"] = toml_edit::Item::Table(toml_edit::Table::new());
+                }
+                old_value = doc["snapshot"]
+                    .get(*sub_key)
+                    .and_then(|v| v.as_integer().map(|i| i.to_string()))
+                    .map(|s| s.to_string());
+                
+                if *sub_key == "retention_limit" {
+                    if let Ok(val) = new_value.parse::<i64>() {
+                         doc["snapshot"][*sub_key] = value(val);
+                    }
                 }
             }
             _ => unreachable!(),
