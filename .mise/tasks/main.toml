@@ -1,0 +1,97 @@
+# Main User-Facing Tasks
+# Schema: https://mise.jdx.dev/schema/mise-task.json
+#
+# ARCHITECTURE: Module-based task organization for Rust/Cargo workflows
+# - cargo.py → All cargo lifecycle tasks (build, test, run, etc.)
+
+# ============================================================================
+# PRIMARY TASKS
+# ============================================================================
+
+[install]
+description = "Install all dependencies"
+run = "cargo fetch"
+
+[build]
+description = "Build the project in debug mode"
+run = "cargo build"
+
+["build:release"]
+description = "Build the project in release mode"
+run = "cargo build --release"
+
+[test]
+description = "Run all tests"
+run = "cargo test"
+
+["test:watch"]
+description = "Run tests in watch mode"
+run = "cargo watch -x test"
+
+[check]
+description = "Check code without building"
+run = "cargo check"
+
+[clippy]
+description = "Run clippy linter"
+run = "cargo clippy -- -D warnings"
+
+[fmt]
+description = "Format code with rustfmt"
+run = "cargo fmt"
+
+["fmt:check"]
+description = "Check code formatting"
+run = "cargo fmt -- --check"
+
+[clean]
+description = "Clean build artifacts"
+run = "cargo clean"
+
+[run]
+description = "Run the zdrive binary"
+run = "cargo run --bin zdrive"
+
+["run:lib"]
+description = "Run library tests and examples"
+run = "cargo test --lib"
+
+# ============================================================================
+# DEVELOPMENT WORKFLOW
+# ============================================================================
+
+[dev]
+description = "Run development checks (fmt, clippy, test)"
+depends = ["fmt", "clippy", "test"]
+
+[ci]
+description = "Run CI checks (fmt check, clippy, test)"
+depends = ["fmt:check", "clippy", "test"]
+
+# ============================================================================
+# RELEASE WORKFLOW
+# ============================================================================
+
+["release:prepare"]
+description = "Prepare for release (check, test, build release)"
+depends = ["check", "test", "build:release"]
+
+# ============================================================================
+# UTILITY TASKS
+# ============================================================================
+
+[doc]
+description = "Generate and open documentation"
+run = "cargo doc --open --no-deps"
+
+["doc:build"]
+description = "Build documentation without opening"
+run = "cargo doc --no-deps"
+
+[update]
+description = "Update dependencies"
+run = "cargo update"
+
+[tree]
+description = "Show dependency tree"
+run = "cargo tree"

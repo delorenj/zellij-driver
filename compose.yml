@@ -1,0 +1,73 @@
+# Docker Compose for Perth (zellij-driver) Development Environment
+# Provides PostgreSQL (intent history + snapshots) and Redis (session state)
+
+version: '3.8'
+
+services:
+  # PostgreSQL - Intent History and Snapshot Storage
+  postgres:
+    image: postgres:16-alpine
+    container_name: perth-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=perth
+      - POSTGRES_USER=perth
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--auth-local=trust --auth-host=md5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5435:5432"  # Using 5435 to avoid conflicts with other projects
+    networks:
+      - perth
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U perth -d perth"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # Redis - Session State and Pane Metadata
+  redis:
+    image: redis:7-alpine
+    container_name: perth-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 300
+      --tcp-backlog 511
+      --timeout 300
+      --databases 16
+      --save 900 1 300 10 60 10000
+      --rdbcompression yes
+      --rdbchecksum yes
+      --maxclients 10000
+      --notify-keyspace-events AKE
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6382:6379"  # Using 6382 to avoid conflicts with other projects
+    networks:
+      - perth
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+      start_period: 5s
+
+# Volumes for data persistence
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# Network for service communication
+networks:
+  perth:
+    driver: bridge

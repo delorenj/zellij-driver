@@ -1,0 +1,17 @@
+{
+  "name": "mise-docs",
+  "description": "Complete mise documentation including tasks, configuration, CLI reference, and best practices",
+  "base_url": "https://mise.jdx.dev/",
+  "selectors": {
+    "main_content": "article",
+    "title": "h1",
+    "code_blocks": "pre code"
+  },
+  "url_patterns": {
+    "include": [],
+    "exclude": []
+  },
+  "categories": {},
+  "rate_limit": 0.3,
+  "max_pages": 100
+}

@@ -1,6 +1,6 @@
-use crate::types::{PaneSnapshot, RestoreReport, RestoreStatus, RestoreWarning, RestoreWarningLevel, SessionSnapshot, TabSnapshot};
+use crate::types::{PaneSnapshot, RestoreReport, RestoreWarning, SessionSnapshot, TabSnapshot};
 use crate::zellij::ZellijDriver;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use chrono::Utc;
 use serde_json::Value;
 use std::collections::HashMap;

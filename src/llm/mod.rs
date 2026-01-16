@@ -5,7 +5,7 @@ mod ollama;
 mod openai;
 
 pub use anthropic::AnthropicProvider;
-pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
+pub use circuit_breaker::CircuitBreaker;
 pub use noop::NoOpProvider;
 pub use ollama::OllamaProvider;
 pub use openai::OpenAIProvider;

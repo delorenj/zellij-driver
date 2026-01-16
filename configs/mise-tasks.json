@@ -1,0 +1,17 @@
+{
+  "name": "mise-tasks",
+  "description": "Use when working with mise task runners, task configuration, TOML task files, or mise task orchestration",
+  "base_url": "https://mise.jdx.dev/tasks/",
+  "selectors": {
+    "main_content": "article",
+    "title": "h1",
+    "code_blocks": "pre code"
+  },
+  "url_patterns": {
+    "include": [],
+    "exclude": []
+  },
+  "categories": {},
+  "rate_limit": 0.3,
+  "max_pages": 50
+}

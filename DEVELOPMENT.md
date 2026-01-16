@@ -1,15 +1,14 @@
 # Development Environment Setup
 
-This document describes the local development environment for the Hybrid BMAD + Letta Architecture project.
+This document describes the local development environment for Perth (zellij-driver).
 
 ## Overview
 
 The development environment provides:
-- **PostgreSQL 16** - Event store database
-- **RabbitMQ 3.12** - Bloodbank event bus with management UI
-- **Redis 7** - Cache and real-time state
+- **PostgreSQL 16** - Intent history and snapshot storage
+- **Redis 7** - Session state and pane metadata
 
-All services run in Docker containers with persistent volumes and custom ports to avoid conflicts with other 33GOD services.
+All services run in Docker containers with persistent volumes and custom ports to avoid conflicts with other projects.
 
 ## Quick Start
 
@@ -39,12 +38,10 @@ The following ports are used to avoid conflicts with other 33GOD projects:
 
 | Service | Host Port | Container Port | Purpose |
 |---------|-----------|----------------|---------|
-| PostgreSQL | 5435 | 5432 | Event store database |
-| RabbitMQ AMQP | 5675 | 5672 | Message broker |
-| RabbitMQ Management | 15675 | 15672 | Web UI |
-| Redis | 6382 | 6379 | Cache |
+| PostgreSQL | 5435 | 5432 | Intent history & snapshots |
+| Redis | 6382 | 6379 | Session state & metadata |
 
-**Note:** These ports differ from standard ports (5432, 5672, 15672, 6379) to allow running multiple 33GOD projects simultaneously.
+**Note:** Custom ports (5435, 6382) avoid conflicts with other projects running standard database ports.
 
 ## Initial Setup
 

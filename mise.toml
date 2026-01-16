@@ -66,23 +66,7 @@ echo 'Database reset complete. Run mise db:migrate to apply schema.'
 
 [tasks."db:psql"]
 description = "Connect to PostgreSQL with psql"
-run = "docker compose exec postgres psql -U event_store -d event_store"
-
-# ============================================================================
-# RabbitMQ Tasks
-# ============================================================================
-
-[tasks."rabbitmq:ui"]
-description = "Open RabbitMQ management UI in browser"
-run = "open http://localhost:15672 || xdg-open http://localhost:15672"
-
-[tasks."rabbitmq:status"]
-description = "Show RabbitMQ status"
-run = "docker compose exec rabbitmq rabbitmqctl status"
-
-[tasks."rabbitmq:queues"]
-description = "List all RabbitMQ queues"
-run = "docker compose exec rabbitmq rabbitmqctl list_queues"
+run = "docker compose exec postgres psql -U perth -d perth"
 
 # ============================================================================
 # Redis Tasks

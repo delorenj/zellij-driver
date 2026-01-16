@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use regex::Regex;
 use semver::{Version, VersionReq};
 use serde_json::Value;
 use std::env;
@@ -149,19 +150,11 @@ impl ZellijDriver {
     }
 
     pub async fn dump_layout_json(&self, session: Option<&str>) -> Result<Option<Value>> {
-        let output = match self.action(session, &["dump-layout", "--json"]).await {
+        // Try without --json since it's not supported in current versions
+        // and we will handle the KDL output
+        let output = match self.action(session, &["dump-layout"]).await {
             Ok(output) => output,
-            Err(err) => {
-                let msg = err.to_string();
-                if msg.contains("dump-layout")
-                    || msg.contains("unknown")
-                    || msg.contains("Unknown")
-                    || msg.contains("unrecognized")
-                {
-                    return Ok(None);
-                }
-                return Err(err);
-            }
+            Err(err) => return Err(err),
         };
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -169,8 +162,72 @@ impl ZellijDriver {
             return Ok(None);
         }
 
-        let value: Value = serde_json::from_str(&stdout).context("failed to parse layout JSON")?;
-        Ok(Some(value))
+        // Try to parse as JSON first (future proofing in case they add it back)
+        if let Ok(value) = serde_json::from_str(&stdout) {
+            return Ok(Some(value));
+        }
+
+        // Fallback: Parse KDL output to JSON structure
+        self.parse_kdl_to_json(&stdout).map(Some)
+    }
+
+    fn parse_kdl_to_json(&self, kdl: &str) -> Result<Value> {
+        let mut tabs = Vec::new();
+        let mut current_tab_name = None;
+        let mut current_panes = Vec::new();
+        
+        let tab_re = Regex::new(r#"tab\s+name="([^"]+)""#).expect("invalid regex");
+        let pane_re = Regex::new(r#"^\s*pane\b"#).expect("invalid regex");
+        
+        for line in kdl.lines() {
+            let line = line.trim();
+            
+            if let Some(caps) = tab_re.captures(line) {
+                // If we were in a tab, push it
+                if let Some(name) = current_tab_name.take() {
+                    let mut tab = serde_json::Map::new();
+                    tab.insert("name".to_string(), Value::String(name));
+                    tab.insert("panes".to_string(), Value::Array(current_panes));
+                    tabs.push(Value::Object(tab));
+                    current_panes = Vec::new();
+                }
+                current_tab_name = Some(caps[1].to_string());
+            } else if pane_re.is_match(line) {
+                // Add a dummy pane object
+                let mut pane = serde_json::Map::new();
+                pane.insert("name".to_string(), Value::String("unnamed".to_string()));
+                current_panes.push(Value::Object(pane));
+            }
+        }
+        
+        // Flush last tab
+        if let Some(name) = current_tab_name {
+            let mut tab = serde_json::Map::new();
+            tab.insert("name".to_string(), Value::String(name));
+            tab.insert("panes".to_string(), Value::Array(current_panes));
+            tabs.push(Value::Object(tab));
+        } else if tabs.is_empty() {
+            // Handle case where no explicit tabs are defined (root layout is the tab)
+            // Re-scan for panes in the whole file
+             let mut panes = Vec::new();
+             for line in kdl.lines() {
+                 if pane_re.is_match(line.trim()) {
+                     let mut pane = serde_json::Map::new();
+                     pane.insert("name".to_string(), Value::String("unnamed".to_string()));
+                     panes.push(Value::Object(pane));
+                 }
+             }
+             if !panes.is_empty() {
+                 let mut tab = serde_json::Map::new();
+                 tab.insert("name".to_string(), Value::String("default".to_string()));
+                 tab.insert("panes".to_string(), Value::Array(panes));
+                 tabs.push(Value::Object(tab));
+             }
+        }
+
+        let mut root = serde_json::Map::new();
+        root.insert("tabs".to_string(), Value::Array(tabs));
+        Ok(Value::Object(root))
     }
 
     pub async fn attach_session(&self, session: &str) -> Result<()> {
@@ -193,10 +250,10 @@ impl ZellijDriver {
 
     async fn action(&self, session: Option<&str>, args: &[&str]) -> Result<std::process::Output> {
         let mut cmd = Command::new("zellij");
-        cmd.arg("action");
         if let Some(session_name) = session {
             cmd.arg("--session").arg(session_name);
         }
+        cmd.arg("action");
 
         let output = cmd
             .args(args)
