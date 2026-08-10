@@ -36,6 +36,41 @@ zdrive pane history my-feature
 zdrive pane history my-feature --last 5 --format json
 ```
 
+## Agentboard navigation bridge
+
+`zellij-driver-server` is a deliberately narrow HTTP bridge for the Agentboard
+Android IME. It translates six authenticated actions into Zellij CLI actions;
+it does not accept arbitrary commands, keystrokes, or text.
+
+| Agentboard action | Zellij action |
+|---|---|
+| `tab-previous` | `go-to-previous-tab` |
+| `tab-next` | `go-to-next-tab` |
+| `pane-up` | `move-focus up` |
+| `pane-down` | `move-focus down` |
+| `pane-left` | `move-focus-or-tab left` |
+| `pane-right` | `move-focus-or-tab right` |
+
+Build and run it with a bearer token of at least 32 bytes:
+
+```bash
+cargo build --release --bin zellij-driver-server
+ZELLIJ_DRIVER_TOKEN='replace-with-a-long-random-secret' \
+  ZELLIJ_DRIVER_SESSION=Workspace \
+  target/release/zellij-driver-server
+```
+
+The server listens on `0.0.0.0:8084` by default. `GET /healthz` is public and
+minimal; `POST /v1/action` requires `Authorization: Bearer …` and a JSON body
+such as `{"action":"pane-left"}`. Configure another bind address, Zellij
+binary, or file-backed token with `ZELLIJ_DRIVER_BIND`, `ZELLIJ_BIN`, and
+`ZELLIJ_DRIVER_TOKEN_FILE`.
+
+On the current host, the user service runs alongside `zellij-web.service` and
+Traefik exposes it at `https://z.delo.sh/agentboard`. The normal Zellij web UI
+keeps its browser-oriented OIDC protection; the Android bridge uses its own
+bearer credential and rate-limited route.
+
 ## Installation
 
 ### Prerequisites

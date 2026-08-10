@@ -5,5 +5,6 @@
 //! - Intent history logging for cognitive context preservation
 //! - Zellij terminal multiplexer integration
 
+pub mod bridge;
 pub mod state;
 pub mod types;
